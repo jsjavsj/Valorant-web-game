@@ -3,22 +3,16 @@ on: [push, pull_request]
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:browser
-      - name: Export updated lockfile
-        if: always()
-        run: |
-          echo LOCKFILE_START
-          gzip -c pnpm-lock.yaml | base64 -w 120
-          echo LOCKFILE_END
