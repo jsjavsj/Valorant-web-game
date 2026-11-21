@@ -10,13 +10,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install dependencies
-        run: |
-          if test -f pnpm-lock.yaml; then
-            pnpm install --frozen-lockfile
-          else
-            pnpm install --no-frozen-lockfile
-          fi
+      - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm typecheck
@@ -31,17 +25,3 @@ jobs:
           curl --retry 15 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:2567/health || { cat server.log; exit 1; }
           actual="$(curl -fsS http://127.0.0.1:5173/health)"
           test "$actual" = '{"status":"ready","protocolVersion":1}'
-      - name: Export generated lockfile
-        if: always()
-        run: |
-          if test -f pnpm-lock.yaml; then
-            echo LOCKFILE_START
-            base64 -w 120 pnpm-lock.yaml
-            echo LOCKFILE_END
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: dependency-lockfile
-          path: pnpm-lock.yaml
-          if-no-files-found: ignore
