@@ -51,6 +51,13 @@ function App() {
       const clip = character.animationGroups[0];
       const housing = prop.meshes.find((mesh) => mesh.getTotalVertices() > 0);
       if (!body || !clip || !housing) throw new Error("The preview assets are incomplete");
+      housing.computeWorldMatrix(true);
+      const bounds = housing.getBoundingInfo().boundingBox;
+      const collider = layout.colliders[0];
+      if (Vector3.Distance(bounds.centerWorld, Vector3.FromArray(collider.center)) > 0.001 ||
+          Vector3.Distance(bounds.extendSizeWorld, Vector3.FromArray(collider.halfExtents)) > 0.001) {
+        throw new Error("Pump housing scale or position does not match its collider");
+      }
       clip.start(true);
       await scene.whenReadyAsync();
       if (disposed) return;
@@ -63,12 +70,15 @@ function App() {
       target.dataset.characterAnimation = clip.name;
     }
 
-    void start(element).catch(() => {
+    void start(element).catch((error: unknown) => {
       engine?.dispose();
       engine = undefined;
       assetWorld?.free();
       assetWorld = undefined;
-      if (!disposed) setGraphics("Preview assets could not load. Run the Blender export and reload.");
+      if (!disposed) {
+        console.error("Preview initialization failed", error);
+        setGraphics("Preview assets could not load. Run the Blender export and reload.");
+      }
     });
 
     return () => {

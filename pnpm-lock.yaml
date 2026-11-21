@@ -26,6 +26,9 @@ importers:
       '@babylonjs/core':
         specifier: 8.0.0
         version: 8.0.0
+      '@babylonjs/loaders':
+        specifier: 8.0.0
+        version: 8.0.0(@babylonjs/core@8.0.0)(babylonjs-gltf2interface@8.56.2)
       '@dimforge/rapier3d-compat':
         specifier: 0.19.3
         version: 0.19.3
@@ -77,6 +80,12 @@ packages:
 
   '@babylonjs/core@8.0.0':
     resolution: {integrity: sha512-Dq3+Vm1Yh+FwGCDYfDAnQhCCAOsetot5LGWMghVX0cM1q+8kqSHn+m4LldzoVCedD9bZhtKin6uL038wxQh1Ow==}
+
+  '@babylonjs/loaders@8.0.0':
+    resolution: {integrity: sha512-UfK1uoPnmH7j1HRIT8pWonn9A1cc8hOSV1E3xQZ4AzOtS7HE7dWnh7rz6l2Tcf1ZhqFy9dEe8zmAvpWbncRAQA==}
+    peerDependencies:
+      '@babylonjs/core': ^8.0.0
+      babylonjs-gltf2interface: ^8.0.0
 
   '@better-auth/utils@0.5.1':
     resolution: {integrity: sha512-WETqw5vQ52uQ/xwWR4E8rTgT6fDEr/wnS+otDNkBCa/69281FCF32OKDdQUcahMCnjsvqXBNiEvAQHFB0EVRRg==}
@@ -660,6 +669,9 @@ packages:
 
   async@2.6.4:
     resolution: {integrity: sha512-mzo5dfJYwAn29PeiJ0zvwTo04zj8HDJj0Mn8TD7sno7q12prdbnasKJHhkm2c1LgrhlJ0teaea8860oxi51mGA==}
+
+  babylonjs-gltf2interface@8.56.2:
+    resolution: {integrity: sha512-c2k14C9mPR0pnfksjBdC4uXEos3t2IAYxcMgn5tI1OSC3aDfr6JAq4kADM4gfN9cUo2qIiDdSg6geUVeU8vi6w==}
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
@@ -1467,6 +1479,11 @@ snapshots:
 
   '@babylonjs/core@8.0.0': {}
 
+  '@babylonjs/loaders@8.0.0(@babylonjs/core@8.0.0)(babylonjs-gltf2interface@8.56.2)':
+    dependencies:
+      '@babylonjs/core': 8.0.0
+      babylonjs-gltf2interface: 8.56.2
+
   '@better-auth/utils@0.5.1':
     dependencies:
       '@noble/hashes': 2.4.0
@@ -1942,6 +1959,8 @@ snapshots:
   async@2.6.4:
     dependencies:
       lodash: 4.18.1
+
+  babylonjs-gltf2interface@8.56.2: {}
 
   balanced-match@1.0.2: {}
 
