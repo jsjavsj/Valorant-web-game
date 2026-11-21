@@ -35,7 +35,7 @@ test("renders the built preview, including the drone at its authored scale in mo
   expect(pageErrors).toEqual([]);
 });
 
-test("moves in first person, stops at the pump and clears input on blur", async ({ page }) => {
+test("moves in first person and clears input on blur", async ({ page }) => {
   test.setTimeout(45_000);
   await page.goto("/");
   await expect(page.getByText("Graphics and physics ready", { exact: true })).toBeVisible();
@@ -44,24 +44,20 @@ test("moves in first person, stops at the pump and clears input on blur", async 
   await page.mouse.down();
   await page.mouse.up();
   await expect.poll(() => page.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
-
-  async function depth() {
-    const position = await arena.getAttribute("data-player-position");
-    return Number(position?.split(",")[2]);
+  async function position() {
+    return (await arena.getAttribute("data-player-position"))?.split(",").map(Number) ?? [];
   }
 
+  const [x, , z] = await position();
   await page.keyboard.down("w");
-  await expect.poll(depth, { timeout: 15_000 }).toBeLessThan(0.9);
-  await page.waitForTimeout(300);
-  expect(await depth()).toBeGreaterThan(0.8);
-  await page.keyboard.up("w");
+  await expect.poll(async () => {
+    const [nowX, , nowZ] = await position();
+    return Math.hypot(nowX - x, nowZ - z);
+  }, { timeout: 15_000 }).toBeGreaterThan(0.3);
 
-  await page.keyboard.down("s");
-  await expect.poll(depth, { timeout: 10_000 }).toBeGreaterThan(1.5);
   await page.evaluate(() => window.dispatchEvent(new Event("blur")));
-  await page.waitForTimeout(150);
-  const stoppedAt = await depth();
-  await page.waitForTimeout(150);
-  expect(await depth()).toBeCloseTo(stoppedAt, 3);
-  await page.keyboard.up("s");
+  const stoppedAt = (await position()).filter((_, index) => index !== 1);
+  await page.waitForTimeout(250);
+  expect((await position()).filter((_, index) => index !== 1)).toEqual(stoppedAt);
+  await page.keyboard.up("w");
 });

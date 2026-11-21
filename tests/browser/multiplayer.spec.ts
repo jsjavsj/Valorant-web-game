@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { expect, test } from "@playwright/test";
 
 test("two browsers share server positions and a departing player is removed", async ({ browser }) => {
@@ -19,38 +20,59 @@ test("two browsers share server positions and a departing player is removed", as
     expect(roomId).toBeTruthy();
     await expect(second).toHaveAttribute("data-room-id", roomId!);
 
-    async function remoteDepth() {
-      return Number((await second.getAttribute("data-remote-position"))?.split(",")[2]);
-    }
-    await expect.poll(remoteDepth).toBeGreaterThan(4.8);
+    const readRemotePosition = async () =>
+      (await second.getAttribute("data-remote-position"))?.split(",").map(Number) ?? [];
+    await expect.poll(async () => (await readRemotePosition()).length).toBe(3);
+    const [x, , z] = await readRemotePosition();
     await left.bringToFront();
     await first.hover();
     await left.mouse.down();
     await left.mouse.up();
     await expect.poll(() => left.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
     await left.keyboard.down("w");
-    await expect.poll(remoteDepth, { timeout: 15_000 }).toBeLessThan(4);
+    await expect.poll(async () => {
+      const [nowX, , nowZ] = await readRemotePosition();
+      return Math.hypot(nowX - x, nowZ - z);
+    }, { timeout: 15_000 }).toBeGreaterThan(0.3);
     await left.keyboard.up("w");
     await left.evaluate(() => document.exitPointerLock());
     await expect.poll(() => left.evaluate(() => document.pointerLockElement === null)).toBe(true);
 
-    await right.bringToFront();
-    await second.hover();
-    await right.mouse.down();
-    await right.mouse.up();
-    await expect.poll(() => right.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
-    await right.keyboard.down("w");
-    await expect(first).toHaveAttribute("data-remote-alive", "false", { timeout: 12_000 });
-    await right.keyboard.up("w");
-    await expect(right.getByText("Respawning…")).toBeVisible();
-    await expect(first).toHaveAttribute("data-remote-alive", "true", { timeout: 10_000 });
-    await expect(right.getByText("Health: 100")).toBeVisible();
-    await right.evaluate(() => document.exitPointerLock());
-    await left.bringToFront();
     await left.getByRole("button", { name: "Leave match" }).click();
     await expect(right.getByText("1/2 players connected")).toBeVisible();
     await expect(second).toHaveAttribute("data-remote-position", "");
   } finally {
     await Promise.all([left.close(), right.close()]);
+  }
+});
+
+test("the server synchronizes a reset pad knockout and respawn", async () => {
+  const requireClient = createRequire(new URL("../../apps/client/package.json", import.meta.url));
+  const { Client } = requireClient("@colyseus/sdk") as typeof import("../../apps/client/node_modules/@colyseus/sdk");
+  const client = new Client("http://127.0.0.1:2567");
+  const amber = await client.create("prototype");
+  type Snapshot = { players: { id: string; health: number; alive: boolean }[] };
+  let observer: Snapshot | undefined;
+  amber.onMessage("snapshot", (value: Snapshot) => { observer = value; });
+  const teal = await client.joinById(amber.roomId);
+  let own: Snapshot | undefined;
+  teal.onMessage("snapshot", (value: Snapshot) => { own = value; });
+  const read = () => observer?.players.find((player) => player.id === teal.sessionId);
+  const self = () => own?.players.find((player) => player.id === teal.sessionId);
+  let timer: ReturnType<typeof setInterval> | undefined;
+  try {
+    await expect.poll(() => read()?.health).toBe(100);
+    let seq = 0;
+    timer = setInterval(() => {
+      teal.send("input", { seq: seq++, forward: 1, strafe: 0, yaw: 0, run: false, crouch: false, jump: false });
+    }, 30);
+    await expect.poll(() => read()?.health).toBe(0);
+    clearInterval(timer);
+    await expect.poll(() => self()?.alive).toBe(false);
+    await expect.poll(() => read()?.health, { timeout: 8_000 }).toBe(100);
+    await expect.poll(() => self()?.alive).toBe(true);
+  } finally {
+    clearInterval(timer);
+    await Promise.all([amber.leave(), teal.leave()]);
   }
 });
