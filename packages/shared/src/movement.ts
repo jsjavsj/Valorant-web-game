@@ -56,7 +56,8 @@ export interface MoveInput {
 export class CharacterMovement {
   static findSpawn(world: RAPIER.World, preferred: RAPIER.Vector, occupants: Iterable<CharacterMovement>) {
     const standingShape = new RAPIER.Capsule(STANDING_HEIGHT / 2 - RADIUS, RADIUS);
-    const offsets = [[0, 0], [0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1]];
+    const shift = 1.35;
+    const offsets = [[0, 0], [0, shift], [shift, 0], [-shift, 0], [0, -shift], [shift, shift], [-shift, shift]];
     const players = [...occupants];
     for (const [dx, dz] of offsets) {
       const feet = { x: preferred.x + dx, y: preferred.y, z: preferred.z + dz };
