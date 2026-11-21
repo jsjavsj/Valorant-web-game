@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { Scene } from "@babylonjs/core/scene";
@@ -31,7 +32,12 @@ function App() {
       const scene = new Scene(engine);
       new ArcRotateCamera("preview", -Math.PI / 2, Math.PI / 3, 5, Vector3.Zero(), scene);
       new HemisphericLight("sky", Vector3.Up(), scene);
-      CreateBox("placeholder", { size: 1 }, scene);
+      const box = CreateBox("placeholder", { size: 1 }, scene);
+      box.material = new StandardMaterial("preview material", scene);
+      await scene.whenReadyAsync();
+      if (disposed) return;
+
+      scene.render();
       engine.runRenderLoop(() => scene.render());
       window.addEventListener("resize", resize);
       setGraphics("Graphics and physics ready");

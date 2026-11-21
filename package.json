@@ -10,11 +10,13 @@
     "dev": "pnpm -r --parallel --filter './apps/**' dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
     "eslint": "9.39.1",
     "typescript-eslint": "8.46.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@playwright/test": "1.56.1"
   }
 }
