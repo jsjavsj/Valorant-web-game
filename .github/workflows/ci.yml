@@ -24,13 +24,21 @@ jobs:
         run: |
           node apps/server/dist/index.js > server.log 2>&1 &
           server_pid=$!
-          pnpm --filter @pumpworks/client dev > client.log 2>&1 &
+          pnpm --filter @pumpworks/client dev --host 127.0.0.1 > client.log 2>&1 &
           client_pid=$!
           trap 'kill "$server_pid" "$client_pid" 2>/dev/null || true' EXIT
           curl --retry 15 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:5173/ | grep -q '<title>Pumpworks</title>' || { cat client.log; exit 1; }
           curl --retry 15 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:2567/health || { cat server.log; exit 1; }
           actual="$(curl -fsS http://127.0.0.1:5173/health)"
           test "$actual" = '{"status":"ready","protocolVersion":1}'
+      - name: Export generated lockfile
+        if: always()
+        run: |
+          if test -f pnpm-lock.yaml; then
+            echo LOCKFILE_START
+            base64 -w 120 pnpm-lock.yaml
+            echo LOCKFILE_END
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
