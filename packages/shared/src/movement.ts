@@ -78,7 +78,7 @@ export class CharacterMovement {
 
   private readonly controller: RAPIER.KinematicCharacterController;
   private readonly collider: RAPIER.Collider;
-  private height = STANDING_HEIGHT;
+  private height: number = STANDING_HEIGHT;
   private verticalSpeed = 0;
   grounded = false;
 
