@@ -2,7 +2,7 @@ import { Room, ServerError } from "@colyseus/core";
 import type { Client } from "@colyseus/core";
 import {
   addArenaColliders, ARENA_SPAWN, CharacterMovement, IDLE_MOVE, isOnResetPad, MATCH_INPUT,
-  MATCH_FIRE, MATCH_RELOAD, MATCH_SNAPSHOT, MATCH_STOP, parseAim, SIDEARM, MovementClock, MOVEMENT_STEP, parsePlayerInput, PLAYER_HEALTH, RAPIER,
+  MATCH_FIRE, MATCH_SHOT, MATCH_RELOAD, MATCH_SNAPSHOT, MATCH_STOP, parseAim, SIDEARM, MovementClock, MOVEMENT_STEP, parsePlayerInput, PLAYER_HEALTH, RAPIER,
 } from "@pumpworks/shared";
 import type { MatchPlayer, MatchSnapshot, MoveInput } from "@pumpworks/shared";
 
@@ -62,6 +62,7 @@ export class MatchRoom extends Room {
           shooter.ammo <= 0 || this.tick < shooter.nextShotTick) return;
 
       shooter.ammo--;
+      client.send(MATCH_SHOT);
       shooter.nextShotTick = this.tick + SIDEARM.interval;
       const hit = shooter.movement.firstHit(direction, SIDEARM.range);
       for (const target of this.players.values()) {

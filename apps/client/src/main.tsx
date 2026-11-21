@@ -174,6 +174,7 @@ function App() {
           setPlayers(0);
           setConnection("offline");
         },
+        () => canvas.current?.animate([{ opacity: 0.8 }, { opacity: 1 }], 95),
       );
       setConnection("online");
     } catch {

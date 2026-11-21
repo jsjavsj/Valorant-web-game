@@ -1,9 +1,8 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 
 export const MOVEMENT_STEP = 1 / 60;
-const RADIUS = 0.32;
-const STANDING_HEIGHT = 1.78;
-const CROUCH_HEIGHT = 1.12;
+export const PLAYER_CAPSULE = { radius: 0.32, standing: 1.78, crouched: 1.12 } as const;
+const { radius: RADIUS, standing: STANDING_HEIGHT, crouched: CROUCH_HEIGHT } = PLAYER_CAPSULE;
 const SKIN = 0.015;
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 export const ARENA_SPAWN = { x: -1, y: 0.04, z: 5 };

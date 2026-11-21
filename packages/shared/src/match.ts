@@ -4,6 +4,7 @@ export const MATCH_INPUT = "input";
 export const MATCH_STOP = "stop";
 export const MATCH_SNAPSHOT = "snapshot";
 export const MATCH_FIRE = "fire";
+export const MATCH_SHOT = "shot";
 export const MATCH_RELOAD = "reload";
 export const SIDEARM = { damage: 25, capacity: 8, interval: 15, reloadTicks: 84, range: 30 } as const;
 

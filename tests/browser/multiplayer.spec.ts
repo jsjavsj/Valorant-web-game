@@ -159,3 +159,26 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
     await Promise.all([shooter.leave(), target.leave()]);
   }
 });
+
+test("rapid clicks produce feedback only for a confirmed shot", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("Graphics and physics ready")).toBeVisible();
+  await page.getByRole("button", { name: "Join match" }).click();
+  await expect(page.getByText("Practice sidearm: 8 rounds")).toBeVisible();
+  const arena = page.getByLabel("3D scene preview");
+  await arena.hover();
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
+  await arena.evaluate((canvas) => {
+    let flashes = 0;
+    const animate = canvas.animate.bind(canvas);
+    canvas.animate = (...args) => {
+      canvas.setAttribute("data-test-flashes", String(++flashes));
+      return animate(...args);
+    };
+    for (let i = 0; i < 2; i++) canvas.dispatchEvent(new MouseEvent("mousedown", { button: 0 }));
+  });
+  await expect(page.getByText("Practice sidearm: 7 rounds")).toBeVisible();
+  await expect(arena).toHaveAttribute("data-test-flashes", "1");
+});
