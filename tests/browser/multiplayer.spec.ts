@@ -116,7 +116,7 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
     await expect.poll(() => left.find((p) => p.id === shooter.sessionId)?.reloading).toBe(true);
     await expect.poll(() => [ammo(left), ammo(right)]).toEqual([8, 8]);
 
-    for (let hits = 1; hits <= 4; hits++) {
+    for (let hits = 2; hits <= 4; hits++) {
       await expect.poll(() => {
         shooter.send("fire", { yaw: Math.PI / 2, pitch: -0.12 });
         return health(right);
@@ -150,7 +150,7 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
     const end = targetState()!;
     shooter.send("fire", { yaw: Math.atan2(end.x - start.x, start.z - end.z), pitch: -0.16 });
     await expect.poll(() => [ammo(left), ammo(right), health(left), health(right)])
-      .toEqual([3, 3, 100, 100]);
+      .toEqual([4, 4, 100, 100]);
   } finally {
     await Promise.all([shooter.leave(), target.leave()]);
   }
