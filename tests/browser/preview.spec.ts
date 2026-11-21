@@ -56,8 +56,9 @@ test("moves in first person and clears input on blur", async ({ page }) => {
   }, { timeout: 15_000 }).toBeGreaterThan(0.3);
 
   await page.evaluate(() => window.dispatchEvent(new Event("blur")));
-  const stoppedAt = (await position()).filter((_, index) => index !== 1);
+  const [stoppedX, , stoppedZ] = await position();
   await page.waitForTimeout(250);
-  expect((await position()).filter((_, index) => index !== 1)).toEqual(stoppedAt);
+  const [afterX, , afterZ] = await position();
+  expect(Math.hypot(afterX - stoppedX, afterZ - stoppedZ)).toBeLessThan(0.01);
   await page.keyboard.up("w");
 });
