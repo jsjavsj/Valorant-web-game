@@ -1,9 +1,8 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 
 export const MOVEMENT_STEP = 1 / 60;
-const RADIUS = 0.32;
-const STANDING_HEIGHT = 1.78;
-const CROUCH_HEIGHT = 1.12;
+export const PLAYER_CAPSULE = { radius: 0.32, standing: 1.78, crouched: 1.12 } as const;
+const { radius: RADIUS, standing: STANDING_HEIGHT, crouched: CROUCH_HEIGHT } = PLAYER_CAPSULE;
 const SKIN = 0.015;
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 export const ARENA_SPAWN = { x: -1, y: 0.04, z: 5 };
@@ -79,7 +78,7 @@ export class CharacterMovement {
 
   private readonly controller: RAPIER.KinematicCharacterController;
   private readonly collider: RAPIER.Collider;
-  private height = STANDING_HEIGHT;
+  private height: number = STANDING_HEIGHT;
   private verticalSpeed = 0;
   grounded = false;
 
@@ -102,6 +101,16 @@ export class CharacterMovement {
   get feet() {
     const p = this.collider.translation();
     return { x: p.x, y: p.y - this.height / 2, z: p.z };
+  }
+
+  get colliderHandle() {
+    return this.collider.handle;
+  }
+
+  firstHit(direction: RAPIER.Vector, range: number) {
+    const feet = this.feet;
+    const ray = new RAPIER.Ray({ ...feet, y: feet.y + this.eyeHeight }, direction);
+    return this.world.castRay(ray, range, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, this.collider)?.collider.handle;
   }
 
   get eyeHeight() {

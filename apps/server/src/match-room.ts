@@ -2,7 +2,7 @@ import { Room, ServerError } from "@colyseus/core";
 import type { Client } from "@colyseus/core";
 import {
   addArenaColliders, ARENA_SPAWN, CharacterMovement, IDLE_MOVE, isOnResetPad, MATCH_INPUT,
-  MATCH_SNAPSHOT, MATCH_STOP, MovementClock, MOVEMENT_STEP, parsePlayerInput, PLAYER_HEALTH, RAPIER,
+  MATCH_FIRE, MATCH_SHOT, MATCH_RELOAD, MATCH_SNAPSHOT, MATCH_STOP, parseAim, SIDEARM, MovementClock, MOVEMENT_STEP, parsePlayerInput, PLAYER_HEALTH, RAPIER,
 } from "@pumpworks/shared";
 import type { MatchPlayer, MatchSnapshot, MoveInput } from "@pumpworks/shared";
 
@@ -11,6 +11,10 @@ type Colliders = ReturnType<typeof import("@pumpworks/shared").parseAssetLayout>
 
 interface Player {
   team: Team;
+  health: number;
+  ammo: number;
+  nextShotTick: number;
+  reloadTick: number;
   movement: CharacterMovement;
   input: MoveInput;
   lastSeq: number;
@@ -51,6 +55,32 @@ export class MatchRoom extends Room {
       player.input = IDLE_MOVE;
     });
 
+    this.onMessage<unknown>(MATCH_FIRE, (client, payload) => {
+      const shooter = this.players.get(client.sessionId);
+      const direction = parseAim(payload);
+      if (!shooter || !direction || shooter.respawnTick || shooter.reloadTick ||
+          shooter.ammo <= 0 || this.tick < shooter.nextShotTick) return;
+
+      shooter.ammo--;
+      client.send(MATCH_SHOT);
+      shooter.nextShotTick = this.tick + SIDEARM.interval;
+      const hit = shooter.movement.firstHit(direction, SIDEARM.range);
+      for (const target of this.players.values()) {
+        if (target === shooter || target.respawnTick || target.movement.colliderHandle !== hit) continue;
+        target.health = Math.max(0, target.health - SIDEARM.damage);
+        if (!target.health) this.knockOut(target, target.movement.feet);
+        break;
+      }
+    });
+
+    this.onMessage<unknown>(MATCH_RELOAD, (client, payload) => {
+      const player = this.players.get(client.sessionId);
+      if (payload === undefined && player && !player.respawnTick && !player.reloadTick &&
+          player.ammo < SIDEARM.capacity) {
+        player.reloadTick = this.tick + SIDEARM.reloadTicks;
+      }
+    });
+
     const clock = new MovementClock();
     this.setSimulationInterval((elapsed) => clock.advance(elapsed / 1000, () => {
       for (const player of this.players.values()) {
@@ -60,18 +90,22 @@ export class MatchRoom extends Room {
             if (!spawn) continue;
             player.movement = new CharacterMovement(this.world, spawn);
             player.respawnTick = 0;
+            player.health = PLAYER_HEALTH;
+            player.ammo = SIDEARM.capacity;
+            player.nextShotTick = this.tick;
             player.lastInputTick = this.tick;
           }
           continue;
+        }
+        if (player.reloadTick && this.tick >= player.reloadTick) {
+          player.reloadTick = 0;
+          player.ammo = SIDEARM.capacity;
         }
         if (this.tick - player.lastInputTick >= 15) player.input = IDLE_MOVE;
         player.movement.step(player.input);
         const feet = player.movement.feet;
         if (isOnResetPad(feet) || feet.y < -5) {
-          player.lastPosition = feet;
-          player.respawnTick = this.tick + 180;
-          player.movement.dispose();
-          player.input = IDLE_MOVE;
+          this.knockOut(player, feet);
         }
         if (player.input.jump) player.input = { ...player.input, jump: false };
       }
@@ -87,7 +121,8 @@ export class MatchRoom extends Room {
     const spawn = this.findSpawn(team);
     if (!spawn) throw new ServerError(4000, "No clear spawn is available.");
     this.players.set(client.sessionId, {
-      team, movement: new CharacterMovement(this.world, spawn),
+      team, health: PLAYER_HEALTH, ammo: SIDEARM.capacity, nextShotTick: this.tick, reloadTick: 0,
+      movement: new CharacterMovement(this.world, spawn),
       input: IDLE_MOVE, lastSeq: -1, lastInputTick: this.tick, respawnTick: 0, lastPosition: spawn,
     });
   }
@@ -112,11 +147,20 @@ export class MatchRoom extends Room {
     return CharacterMovement.findSpawn(this.world, preferred, occupants);
   }
 
+  private knockOut(player: Player, feet: Player["lastPosition"]) {
+    player.health = 0;
+    player.reloadTick = 0;
+    player.lastPosition = feet;
+    player.respawnTick = this.tick + 180;
+    player.movement.dispose();
+    player.input = IDLE_MOVE;
+  }
+
   private sendSnapshot() {
-    const players = [...this.players].map(([id, { team, movement, respawnTick, lastPosition }]): MatchPlayer => ({
+    const players = [...this.players].map(([id, { team, movement, respawnTick, lastPosition, health, ammo, reloadTick }]): MatchPlayer => ({
       id, team, ...(respawnTick ? lastPosition : movement.feet),
       eyeHeight: movement.eyeHeight, crouched: movement.crouched,
-      health: respawnTick ? 0 : PLAYER_HEALTH, alive: respawnTick === 0,
+      health, ammo, reloading: reloadTick !== 0, alive: respawnTick === 0,
     }));
     const snapshot: MatchSnapshot = { tick: this.tick, players };
     this.broadcast(MATCH_SNAPSHOT, snapshot);

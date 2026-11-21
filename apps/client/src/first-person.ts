@@ -2,11 +2,12 @@ import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { CreateCapsule } from "@babylonjs/core/Meshes/Builders/capsuleBuilder";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import type { MatchConnection } from "./multiplayer";
 import type RAPIER from "@dimforge/rapier3d-compat";
-import { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP, RESET_PAD } from "@pumpworks/shared";
+import { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP, PLAYER_CAPSULE, RESET_PAD, SIDEARM } from "@pumpworks/shared";
 
 const CONTROL_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Space",
@@ -54,7 +55,9 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     }
   }
   function onKeyDown(event: KeyboardEvent) {
-    if (!locked() || !CONTROL_KEYS.has(event.code)) return;
+    if (!locked()) return;
+    if (event.code === "KeyR" && !event.repeat) getRoom()?.reload();
+    if (!CONTROL_KEYS.has(event.code)) return;
     event.preventDefault();
     if (event.code === "Space" && !event.repeat) jump = true;
     keys.add(event.code);
@@ -74,6 +77,18 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     pitch = Math.max(-1.48, Math.min(1.48, pitch - event.movementY * 0.002));
   }
 
+  let nextLocalShot = 0;
+  function onFire(event: MouseEvent) {
+    if (event.button !== 0 || !locked()) return;
+    const room = getRoom();
+    const player = room?.snapshot?.players.find((entry) => entry.id === room.sessionId);
+    if (!room || !player?.alive || !player.ammo || player.reloading) return;
+    const now = performance.now();
+    if (now < nextLocalShot) return;
+    nextLocalShot = now + SIDEARM.interval * MOVEMENT_STEP * 1000;
+    room.fire(Math.atan2(Math.sin(yaw), Math.cos(yaw)), pitch);
+  }
+  canvas.addEventListener("mousedown", onFire);
   canvas.addEventListener("click", requestLock);
   document.addEventListener("pointerlockchange", onLockChange);
   document.addEventListener("visibilitychange", onVisibilityChange);
@@ -91,7 +106,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   marker.material = markerMaterial;
   marker.setEnabled(false);
 
-  const avatars = new Map<string, ReturnType<typeof CreateBox>>();
+  const avatars = new Map<string, { mesh: ReturnType<typeof CreateCapsule>; height: number }>();
   const teamColors = {
     amber: new Color3(0.92, 0.57, 0.18),
     teal: new Color3(0.19, 0.74, 0.70),
@@ -125,21 +140,25 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     const players = room?.snapshot?.players ?? [];
     const self = players.find((player) => player.id === room?.sessionId);
     const remote = players.filter((player) => player.id !== room?.sessionId && player.alive);
-    for (const [id, mesh] of avatars) {
+    for (const [id, { mesh }] of avatars) {
       if (!remote.some((player) => player.id === id)) {
         mesh.dispose();
         avatars.delete(id);
       }
     }
     for (const player of remote) {
-      let mesh = avatars.get(player.id);
-      if (!mesh) {
-        mesh = CreateBox("remote player", { width: 0.58, height: 1.65, depth: 0.58 }, scene);
+      const height = player.crouched ? PLAYER_CAPSULE.crouched : PLAYER_CAPSULE.standing;
+      let avatar = avatars.get(player.id);
+      if (avatar?.height !== height) {
+        avatar?.mesh.dispose();
+        const mesh = CreateCapsule("remote player", {
+          height, radius: PLAYER_CAPSULE.radius, tessellation: 32, capSubdivisions: 12,
+        }, scene);
         mesh.material = teamMaterials[player.team];
-        avatars.set(player.id, mesh);
+        avatar = { mesh, height };
+        avatars.set(player.id, avatar);
       }
-      mesh.scaling.y = player.crouched ? 0.65 : 1;
-      mesh.position.set(player.x, player.y + 0.825 * mesh.scaling.y, player.z);
+      avatar.mesh.position.set(player.x, player.y + height / 2, player.z);
     }
     canvas.dataset.roomId = room?.id ?? "";
     const { x, y, z } = self ?? movement.feet;
@@ -152,6 +171,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   return {
     update,
     dispose() {
+      canvas.removeEventListener("mousedown", onFire);
       canvas.removeEventListener("click", requestLock);
       document.removeEventListener("pointerlockchange", onLockChange);
       document.removeEventListener("visibilitychange", onVisibilityChange);
