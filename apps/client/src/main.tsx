@@ -5,7 +5,7 @@ import { Engine } from "@babylonjs/core/Engines/engine";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import "@babylonjs/loaders/glTF";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { GAME_NAME, parseAssetLayout, PROTOCOL_VERSION } from "@pumpworks/shared";
@@ -48,9 +48,10 @@ function App() {
       const character = await SceneLoader.ImportMeshAsync("", "/assets/", layout.character, scene);
       if (disposed) return;
       const body = character.meshes.find((mesh) => mesh.skeleton);
-      const clip = character.animationGroups[0];
+      const clip = character.animationGroups.find((animation) => animation.name === "Idle");
+      const root = body?.skeleton?.bones.find((bone) => bone.name === "root")?.getTransformNode();
       const housing = prop.meshes.find((mesh) => mesh.getTotalVertices() > 0);
-      if (!body || !clip || !housing) throw new Error("The preview assets are incomplete");
+      if (!body || !clip || !housing || !root?.rotationQuaternion) throw new Error("The preview assets are incomplete");
       housing.computeWorldMatrix(true);
       const bounds = housing.getBoundingInfo().boundingBox;
       const collider = layout.colliders[0];
@@ -58,11 +59,23 @@ function App() {
           Vector3.Distance(bounds.extendSizeWorld, Vector3.FromArray(collider.halfExtents)) > 0.001) {
         throw new Error("Pump housing scale or position does not match its collider");
       }
+      body.computeWorldMatrix(true);
+      const droneDimensions = body.getBoundingInfo().boundingBox.extendSizeWorld.scale(2);
+      target.dataset.characterDimensions = droneDimensions.asArray().join(",");
+      clip.stop();
       clip.start(true);
       await scene.whenReadyAsync();
       if (disposed) return;
 
       scene.render();
+      const initialPose = root.rotationQuaternion.clone();
+      const checkMotion = scene.onAfterRenderObservable.add(() => {
+        const rotation = root.rotationQuaternion;
+        if (rotation && 1 - Math.abs(Quaternion.Dot(initialPose, rotation)) > 0.0001) {
+          target.dataset.characterMoved = "true";
+          scene.onAfterRenderObservable.remove(checkMotion);
+        }
+      });
       engine.runRenderLoop(() => scene.render());
       window.addEventListener("resize", resize);
       setGraphics("Graphics and physics ready");
