@@ -16,3 +16,5 @@ export { default as RAPIER } from "@dimforge/rapier3d-compat";
 
 export { IDLE_MOVE, MATCH_INPUT, MATCH_SNAPSHOT, MATCH_STOP, isOnResetPad, parsePlayerInput, PLAYER_HEALTH, RESET_PAD } from "./match.js";
 export type { MatchPlayer, MatchSnapshot, PlayerInput } from "./match.js";
+
+export { MATCH_FIRE, MATCH_RELOAD, parseAim, SIDEARM } from "./match.js";

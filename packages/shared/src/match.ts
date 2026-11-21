@@ -3,6 +3,18 @@ import type { MoveInput } from "./movement.js";
 export const MATCH_INPUT = "input";
 export const MATCH_STOP = "stop";
 export const MATCH_SNAPSHOT = "snapshot";
+export const MATCH_FIRE = "fire";
+export const MATCH_RELOAD = "reload";
+export const SIDEARM = { damage: 25, capacity: 8, interval: 15, reloadTicks: 84, range: 30 } as const;
+
+export function parseAim(value: unknown) {
+  if (!value || typeof value !== "object" || Object.keys(value).length !== 2) return;
+  const { yaw, pitch } = value as Record<string, unknown>;
+  if (typeof yaw !== "number" || !Number.isFinite(yaw) || Math.abs(yaw) > Math.PI ||
+      typeof pitch !== "number" || !Number.isFinite(pitch) || Math.abs(pitch) > 1.48) return;
+  return { x: Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
+}
+
 export const PLAYER_HEALTH = 100;
 export const IDLE_MOVE: MoveInput = {
   forward: 0, strafe: 0, yaw: 0, run: false, crouch: false, jump: false,
@@ -22,6 +34,8 @@ export interface MatchPlayer {
   crouched: boolean;
   health: number;
   alive: boolean;
+  ammo: number;
+  reloading: boolean;
 }
 
 export interface MatchSnapshot {

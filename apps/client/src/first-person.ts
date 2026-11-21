@@ -54,7 +54,9 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     }
   }
   function onKeyDown(event: KeyboardEvent) {
-    if (!locked() || !CONTROL_KEYS.has(event.code)) return;
+    if (!locked()) return;
+    if (event.code === "KeyR" && !event.repeat) getRoom()?.reload();
+    if (!CONTROL_KEYS.has(event.code)) return;
     event.preventDefault();
     if (event.code === "Space" && !event.repeat) jump = true;
     keys.add(event.code);
@@ -74,6 +76,15 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     pitch = Math.max(-1.48, Math.min(1.48, pitch - event.movementY * 0.002));
   }
 
+  function onFire(event: MouseEvent) {
+    if (event.button !== 0 || !locked()) return;
+    const room = getRoom();
+    const player = room?.snapshot?.players.find((entry) => entry.id === room.sessionId);
+    if (!room || !player?.alive || !player.ammo || player.reloading) return;
+    room.fire(Math.atan2(Math.sin(yaw), Math.cos(yaw)), pitch);
+    canvas.animate([{ opacity: 0.8 }, { opacity: 1 }], 95);
+  }
+  canvas.addEventListener("mousedown", onFire);
   canvas.addEventListener("click", requestLock);
   document.addEventListener("pointerlockchange", onLockChange);
   document.addEventListener("visibilitychange", onVisibilityChange);
@@ -152,6 +163,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   return {
     update,
     dispose() {
+      canvas.removeEventListener("mousedown", onFire);
       canvas.removeEventListener("click", requestLock);
       document.removeEventListener("pointerlockchange", onLockChange);
       document.removeEventListener("visibilitychange", onVisibilityChange);

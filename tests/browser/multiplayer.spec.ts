@@ -92,3 +92,30 @@ test("the server synchronizes a reset pad knockout and respawn", async () => {
     await Promise.all([amber.leave(), teal.leave()]);
   }
 });
+
+test("the server shares sidearm damage, enforces cadence, and reloads", async () => {
+  const requireClient = createRequire(new URL("../../apps/client/package.json", import.meta.url));
+  const { Client } = requireClient("@colyseus/sdk") as typeof import("../../apps/client/node_modules/@colyseus/sdk");
+  const client = new Client("http://127.0.0.1:2567");
+  const shooter = await client.create("prototype");
+  const target = await client.joinById(shooter.roomId);
+  type State = { id: string; health: number; ammo: number; reloading: boolean };
+  let left: State[] = [];
+  let right: State[] = [];
+  shooter.onMessage("snapshot", (s: { players: State[] }) => { left = s.players; });
+  target.onMessage("snapshot", (s: { players: State[] }) => { right = s.players; });
+  const ammo = (players: State[]) => players.find((p) => p.id === shooter.sessionId)?.ammo;
+  const health = (players: State[]) => players.find((p) => p.id === target.sessionId)?.health;
+  try {
+    await expect.poll(() => health(right)).toBe(100);
+    shooter.send("fire", { yaw: Math.PI / 2, pitch: -0.12 });
+    shooter.send("fire", { yaw: Math.PI / 2, pitch: -0.12 });
+    await expect.poll(() => [ammo(left), ammo(right), health(left), health(right)])
+      .toEqual([7, 7, 75, 75]);
+    shooter.send("reload");
+    await expect.poll(() => left.find((p) => p.id === shooter.sessionId)?.reloading).toBe(true);
+    await expect.poll(() => [ammo(left), ammo(right)]).toEqual([8, 8]);
+  } finally {
+    await Promise.all([shooter.leave(), target.leave()]);
+  }
+});

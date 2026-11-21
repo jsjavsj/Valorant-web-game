@@ -17,6 +17,7 @@ function App() {
   const network = useRef<MatchConnection | null>(null);
   const [connection, setConnection] = useState<"offline" | "joining" | "online" | "leaving">("offline");
   const [health, setHealth] = useState(100);
+  const [weapon, setWeapon] = useState({ ammo: 8, reloading: false });
   const [players, setPlayers] = useState(0);
   const [matchError, setMatchError] = useState("");
   const [graphics, setGraphics] = useState("Starting graphics and physics…");
@@ -156,7 +157,10 @@ function App() {
         (snapshot, sessionId) => {
           setPlayers(snapshot.players.length);
           const self = snapshot.players.find((player) => player.id === sessionId);
-          if (self) setHealth(self.health);
+          if (self) {
+            setHealth(self.health);
+            setWeapon({ ammo: self.ammo, reloading: self.reloading });
+          }
           const other = snapshot.players.find((player) => player.id !== sessionId);
           const target = canvas.current;
           if (target) {
@@ -190,11 +194,18 @@ function App() {
       {connection === "online" && <>
         <p role="status">{players}/2 players connected</p>
         <p role="status">{health === 0 ? "Respawning…" : `Health: ${health}`}</p>
-        <p>The red pad tests knockouts and respawns.</p>
+        <p role="status">{weapon.reloading ? "Reloading…" : `Practice sidearm: ${weapon.ammo} rounds`}</p>
+        <p>Left click to fire · R to reload</p>
       </>}
       {matchError && <p role="alert">{matchError}</p>}
       <p>Click the arena to look around. WASD to move, Shift to run, Ctrl to crouch, Space to jump, and Esc to release the mouse.</p>
-      <canvas ref={canvas} aria-label="3D scene preview" style={{ width: "100%", height: 360 }} />
+      <div style={{ position: "relative" }}>
+        <canvas ref={canvas} aria-label="3D scene preview" style={{ width: "100%", height: 360, display: "block" }} />
+        {connection === "online" && <span aria-hidden="true" style={{
+          pointerEvents: "none", position: "absolute", left: "50%", top: "50%",
+          color: "white", transform: "translate(-50%, -50%)",
+        }}>+</span>}
+      </div>
     </main>
   );
 }

@@ -104,6 +104,16 @@ export class CharacterMovement {
     return { x: p.x, y: p.y - this.height / 2, z: p.z };
   }
 
+  get colliderHandle() {
+    return this.collider.handle;
+  }
+
+  firstHit(direction: RAPIER.Vector, range: number) {
+    const feet = this.feet;
+    const ray = new RAPIER.Ray({ ...feet, y: feet.y + this.eyeHeight }, direction);
+    return this.world.castRay(ray, range, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, this.collider)?.collider.handle;
+  }
+
   get eyeHeight() {
     return this.height - 0.17;
   }
