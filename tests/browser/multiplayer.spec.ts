@@ -99,7 +99,7 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
   const client = new Client("http://127.0.0.1:2567");
   const shooter = await client.create("prototype");
   const target = await client.joinById(shooter.roomId);
-  type State = { id: string; health: number; ammo: number; reloading: boolean };
+  type State = { id: string; health: number; ammo: number; reloading: boolean; x: number; z: number };
   let left: State[] = [];
   let right: State[] = [];
   shooter.onMessage("snapshot", (s: { players: State[] }) => { left = s.players; });
@@ -115,6 +115,42 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
     shooter.send("reload");
     await expect.poll(() => left.find((p) => p.id === shooter.sessionId)?.reloading).toBe(true);
     await expect.poll(() => [ammo(left), ammo(right)]).toEqual([8, 8]);
+
+    for (let hits = 1; hits <= 4; hits++) {
+      await expect.poll(() => {
+        shooter.send("fire", { yaw: Math.PI / 2, pitch: -0.12 });
+        return health(right);
+      }, { intervals: [300] }).toBe(100 - hits * 25);
+    }
+    await expect.poll(() => health(left)).toBe(0);
+    await expect.poll(() => health(right), { timeout: 8_000 }).toBe(100);
+
+    let sequence = 0;
+    const targetState = () => right.find((p) => p.id === target.sessionId);
+    async function moveUntil(strafe: number, forward: number, reached: (state: State) => boolean) {
+      function send(x: number, z: number) {
+        target.send("input", { seq: sequence++, strafe: x, forward: z, yaw: 0, run: false, crouch: false, jump: false });
+      }
+      const timer = setInterval(() => send(strafe, forward), 30);
+      try {
+        await expect.poll(() => {
+          const state = targetState();
+          return state ? reached(state) : false;
+        }, { intervals: [25], timeout: 5000 }).toBe(true);
+      } finally {
+        clearInterval(timer);
+        send(0, 0);
+      }
+    }
+    await moveUntil(-1, 0, (state) => state.x <= 0.1);
+    await moveUntil(0, 1, (state) => state.z <= -1.8);
+    await moveUntil(-1, 0, (state) => state.x <= -0.95);
+
+    const start = left.find((p) => p.id === shooter.sessionId)!;
+    const end = targetState()!;
+    shooter.send("fire", { yaw: Math.atan2(end.x - start.x, start.z - end.z), pitch: -0.16 });
+    await expect.poll(() => [ammo(left), ammo(right), health(left), health(right)])
+      .toEqual([3, 3, 100, 100]);
   } finally {
     await Promise.all([shooter.leave(), target.leave()]);
   }
