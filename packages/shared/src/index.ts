@@ -13,3 +13,6 @@ export { parseAssetLayout } from "./assets.js";
 export { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP } from "./movement.js";
 export type { MoveInput } from "./movement.js";
 export { default as RAPIER } from "@dimforge/rapier3d-compat";
+
+export { IDLE_MOVE, MATCH_INPUT, MATCH_SNAPSHOT, isOnResetPad, parsePlayerInput, PLAYER_HEALTH, RESET_PAD } from "./match.js";
+export type { MatchPlayer, MatchSnapshot, PlayerInput } from "./match.js";

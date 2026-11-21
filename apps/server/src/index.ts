@@ -1,13 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { Room, Server } from "@colyseus/core";
+import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
-import { addArenaColliders, MOVEMENT_STEP, parseAssetLayout, PROTOCOL_VERSION, RAPIER, ROOM_TYPE } from "@pumpworks/shared";
+import { parseAssetLayout, PROTOCOL_VERSION, RAPIER, ROOM_TYPE } from "@pumpworks/shared";
 import type { HealthResponse } from "@pumpworks/shared";
 
-class PrototypeRoom extends Room {
-  maxClients = 2;
-}
+import { MatchRoom } from "./match-room.js";
 
 const port = Number(process.env.PORT ?? 2567);
 const host = process.env.HOST ?? "127.0.0.1";
@@ -21,32 +19,18 @@ const layout = parseAssetLayout(JSON.parse(await readFile(manifestPath, "utf8").
   throw new Error("Cannot read asset manifest. Run the Blender export before starting Pumpworks.", { cause });
 })));
 await RAPIER.init();
-const assetWorld = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-for (const { center, halfExtents } of layout.colliders) {
-  assetWorld.createCollider(RAPIER.ColliderDesc.cuboid(...halfExtents).setTranslation(...center));
-}
-
-const assetColliderCount = assetWorld.colliders.len();
-addArenaColliders(assetWorld);
-assetWorld.timestep = MOVEMENT_STEP;
-assetWorld.step();
-
-const httpServer = createServer((request, response) => {
-  if (request.method !== "GET" || request.url !== "/health") {
-    response.writeHead(404).end();
-    return;
-  }
-
-  const body: HealthResponse = {
-    status: "ready",
-    protocolVersion: PROTOCOL_VERSION,
-    assetColliderCount,
-  };
-  response.writeHead(200, { "content-type": "application/json" });
-  response.end(JSON.stringify(body));
+const httpServer = createServer();
+const gameServer = new Server({
+  transport: new WebSocketTransport({ server: httpServer }),
+  express: (app) => {
+    app.get("/health", (_request, response) => {
+      const body: HealthResponse = {
+        status: "ready", protocolVersion: PROTOCOL_VERSION, assetColliderCount: layout.colliders.length,
+      };
+      response.json(body);
+    });
+  },
 });
-
-const gameServer = new Server({ transport: new WebSocketTransport({ server: httpServer }) });
-gameServer.define(ROOM_TYPE, PrototypeRoom);
+gameServer.define(ROOM_TYPE, MatchRoom, { colliders: layout.colliders });
 await gameServer.listen(port, host);
 console.log(`Pumpworks server listening at http://${host}:${port}`);

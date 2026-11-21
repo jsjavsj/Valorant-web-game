@@ -71,6 +71,11 @@ export class CharacterMovement {
     this.controller.setMinSlopeSlideAngle(Math.PI / 4);
   }
 
+  dispose() {
+    this.world.removeCharacterController(this.controller);
+    this.world.removeCollider(this.collider, false);
+  }
+
   get feet() {
     const p = this.collider.translation();
     return { x: p.x, y: p.y - this.height / 2, z: p.z };
