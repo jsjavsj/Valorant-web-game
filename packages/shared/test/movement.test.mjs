@@ -83,3 +83,21 @@ test("the pump blocks a head-on approach", (t) => {
   repeat(120, { ...idle, forward: 1 });
   assert.ok(player.feet.z > 0.8 && player.feet.z < 0.9);
 });
+
+test("spawn checks the full capsule against the arena and newly created players", (t) => {
+  const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+  t.after(() => world.free());
+  addArenaColliders(world);
+  world.step();
+  const preferred = { x: 1.8, y: 0.04, z: 5 };
+  assert.deepEqual(CharacterMovement.findSpawn(world, preferred, []), preferred);
+  const occupant = new CharacterMovement(world, preferred);
+  const fallback = CharacterMovement.findSpawn(world, preferred, [occupant]);
+  assert.ok(fallback);
+  assert.ok(Math.hypot(fallback.x - preferred.x, fallback.z - preferred.z) >= 0.64);
+
+  const underBeam = { x: 2.4, y: 0.04, z: 2 };
+  const besideBeam = CharacterMovement.findSpawn(world, underBeam, []);
+  assert.ok(besideBeam);
+  assert.notDeepEqual(besideBeam, underBeam);
+});

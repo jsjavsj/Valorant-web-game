@@ -5,7 +5,15 @@ test("two browsers share server positions and a departing player is removed", as
   test.setTimeout(60_000);
   const left = await browser.newPage();
   const right = await browser.newPage();
+  const sent: (string | Buffer)[] = [];
+  left.on("websocket", (socket) => socket.on("framesent", ({ payload }) => sent.push(payload)));
   try {
+    await left.addInitScript(() => {
+      const schedule = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (callback) => schedule((time) => {
+        if (document.documentElement.dataset.pauseFrames !== "true") callback(time);
+      });
+    });
     await left.goto("/");
     await right.goto("/");
     for (const page of [left, right]) {
@@ -34,6 +42,14 @@ test("two browsers share server positions and a departing player is removed", as
       const [nowX, , nowZ] = await readRemotePosition();
       return Math.hypot(nowX - x, nowZ - z);
     }, { timeout: 15_000 }).toBeGreaterThan(0.3);
+    const beforeBlur = sent.length;
+    await left.evaluate(() => {
+      document.documentElement.dataset.pauseFrames = "true";
+      window.dispatchEvent(new Event("blur"));
+    });
+    await expect.poll(() => sent.slice(beforeBlur).some((frame) =>
+      Buffer.isBuffer(frame) && frame.includes("stop"),
+    )).toBe(true);
     await left.keyboard.up("w");
     await left.evaluate(() => document.exitPointerLock());
     await expect.poll(() => left.evaluate(() => document.pointerLockElement === null)).toBe(true);

@@ -1,6 +1,7 @@
 import type { MoveInput } from "./movement.js";
 
 export const MATCH_INPUT = "input";
+export const MATCH_STOP = "stop";
 export const MATCH_SNAPSHOT = "snapshot";
 export const PLAYER_HEALTH = 100;
 export const IDLE_MOVE: MoveInput = {

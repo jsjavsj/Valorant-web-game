@@ -1,5 +1,5 @@
 import { Client } from "@colyseus/sdk";
-import { MATCH_INPUT, MATCH_SNAPSHOT, ROOM_TYPE } from "@pumpworks/shared";
+import { MATCH_INPUT, MATCH_SNAPSHOT, MATCH_STOP, ROOM_TYPE } from "@pumpworks/shared";
 import type { MatchSnapshot, MoveInput, PlayerInput } from "@pumpworks/shared";
 
 export async function connectMatch(onSnapshot: (snapshot: MatchSnapshot, sessionId: string) => void, onLeave: () => void) {
@@ -25,6 +25,9 @@ export async function connectMatch(onSnapshot: (snapshot: MatchSnapshot, session
     send(input: MoveInput) {
       const message: PlayerInput = { ...input, seq: sequence++ };
       room.send(MATCH_INPUT, message);
+    },
+    stop() {
+      room.send(MATCH_STOP, sequence++);
     },
     async leave() { await room.leave(); },
   };

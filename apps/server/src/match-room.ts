@@ -1,8 +1,8 @@
-import { Room } from "@colyseus/core";
+import { Room, ServerError } from "@colyseus/core";
 import type { Client } from "@colyseus/core";
 import {
   addArenaColliders, ARENA_SPAWN, CharacterMovement, IDLE_MOVE, isOnResetPad, MATCH_INPUT,
-  MATCH_SNAPSHOT, MovementClock, MOVEMENT_STEP, parsePlayerInput, PLAYER_HEALTH, RAPIER,
+  MATCH_SNAPSHOT, MATCH_STOP, MovementClock, MOVEMENT_STEP, parsePlayerInput, PLAYER_HEALTH, RAPIER,
 } from "@pumpworks/shared";
 import type { MatchPlayer, MatchSnapshot, MoveInput } from "@pumpworks/shared";
 
@@ -43,12 +43,22 @@ export class MatchRoom extends Room {
       player.input = { ...input, jump: input.jump || player.input.jump };
     });
 
+    this.onMessage<unknown>(MATCH_STOP, (client, seq) => {
+      const player = this.players.get(client.sessionId);
+      if (!player || typeof seq !== "number" || !Number.isSafeInteger(seq) || seq <= player.lastSeq) return;
+      player.lastSeq = seq;
+      player.lastInputTick = this.tick;
+      player.input = IDLE_MOVE;
+    });
+
     const clock = new MovementClock();
     this.setSimulationInterval((elapsed) => clock.advance(elapsed / 1000, () => {
       for (const player of this.players.values()) {
         if (player.respawnTick) {
           if (this.tick >= player.respawnTick) {
-            player.movement = new CharacterMovement(this.world, this.spawn(player.team));
+            const spawn = this.findSpawn(player.team);
+            if (!spawn) continue;
+            player.movement = new CharacterMovement(this.world, spawn);
             player.respawnTick = 0;
             player.lastInputTick = this.tick;
           }
@@ -74,7 +84,8 @@ export class MatchRoom extends Room {
   onJoin(client: Client) {
     const amberTaken = [...this.players.values()].some((player) => player.team === "amber");
     const team = amberTaken ? "teal" : "amber";
-    const spawn = this.spawn(team);
+    const spawn = this.findSpawn(team);
+    if (!spawn) throw new ServerError(4000, "No clear spawn is available.");
     this.players.set(client.sessionId, {
       team, movement: new CharacterMovement(this.world, spawn),
       input: IDLE_MOVE, lastSeq: -1, lastInputTick: this.tick, respawnTick: 0, lastPosition: spawn,
@@ -93,8 +104,12 @@ export class MatchRoom extends Room {
     this.world.free();
   }
 
-  private spawn(team: Team) {
-    return { ...ARENA_SPAWN, x: team === "amber" ? -1 : 1.8 };
+  private findSpawn(team: Team) {
+    const preferred = { ...ARENA_SPAWN, x: team === "amber" ? -1 : 1.8 };
+    const occupants = [...this.players.values()]
+      .filter((player) => !player.respawnTick)
+      .map((player) => player.movement);
+    return CharacterMovement.findSpawn(this.world, preferred, occupants);
   }
 
   private sendSnapshot() {

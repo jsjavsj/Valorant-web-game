@@ -43,6 +43,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   const clear = () => {
     keys.clear();
     jump = false;
+    getRoom()?.stop();
   };
 
   function requestLock() {
@@ -64,6 +65,9 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   function onLockChange() {
     if (!locked()) clear();
   }
+  function onVisibilityChange() {
+    if (document.hidden) clear();
+  }
   function onMouse(event: MouseEvent) {
     if (!locked()) return;
     yaw += event.movementX * 0.002;
@@ -72,7 +76,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
 
   canvas.addEventListener("click", requestLock);
   document.addEventListener("pointerlockchange", onLockChange);
-  document.addEventListener("visibilitychange", clear);
+  document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener("blur", clear);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
@@ -150,7 +154,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     dispose() {
       canvas.removeEventListener("click", requestLock);
       document.removeEventListener("pointerlockchange", onLockChange);
-      document.removeEventListener("visibilitychange", clear);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("blur", clear);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);

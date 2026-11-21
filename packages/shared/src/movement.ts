@@ -54,6 +54,28 @@ export interface MoveInput {
 }
 
 export class CharacterMovement {
+  static findSpawn(world: RAPIER.World, preferred: RAPIER.Vector, occupants: Iterable<CharacterMovement>) {
+    const standingShape = new RAPIER.Capsule(STANDING_HEIGHT / 2 - RADIUS, RADIUS);
+    const offsets = [[0, 0], [0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1]];
+    const players = [...occupants];
+    for (const [dx, dz] of offsets) {
+      const feet = { x: preferred.x + dx, y: preferred.y, z: preferred.z + dz };
+      const center = { ...feet, y: feet.y + STANDING_HEIGHT / 2 };
+      if (world.intersectionWithShape(center, IDENTITY, standingShape, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS)) continue;
+      // A player can move or spawn between physics steps, before the query index updates.
+      const overlapsPlayer = players.some((player) => {
+        const other = player.feet;
+        const segmentGap = Math.max(
+          0,
+          other.y + RADIUS - (feet.y + STANDING_HEIGHT - RADIUS),
+          feet.y + RADIUS - (other.y + player.height - RADIUS),
+        );
+        return Math.hypot(other.x - feet.x, segmentGap, other.z - feet.z) < 2 * RADIUS + SKIN;
+      });
+      if (!overlapsPlayer) return feet;
+    }
+  }
+
   private readonly controller: RAPIER.KinematicCharacterController;
   private readonly collider: RAPIER.Collider;
   private height = STANDING_HEIGHT;
