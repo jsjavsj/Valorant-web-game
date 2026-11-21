@@ -4,10 +4,11 @@ An original desktop browser tactical shooter. See [gameplay specification](docs/
 
 ## Local setup
 
-Install Node.js 22.12 or later and pnpm 10.28.2. From the repository root:
+Install Node.js 22.12 or later and pnpm 10.28.2. Install Blender 4.x and make sure `blender` is on your PATH. From the repository root:
 
 ```sh
 pnpm install
+blender --background --factory-startup --python-exit-code 1 --python assets/source/export_samples.py
 pnpm --filter @pumpworks/shared build
 pnpm dev
 ```
@@ -17,3 +18,5 @@ Open http://localhost:5173. The client displays a Babylon.js preview and checks 
 Run `pnpm lint`, `pnpm build`, and `pnpm typecheck` to verify changes. The workspace currently provides a preview, readiness endpoint, and placeholder room. Match play and room joining are later milestones.
 
 For the browser smoke test, run `pnpm exec playwright install chromium` once, then run `pnpm build` and `pnpm test:browser`. The test starts both services. On Linux, use `pnpm exec playwright install --with-deps chromium` if browser system libraries are missing.
+
+See the [asset pipeline](docs/references/asset-pipeline.md) for units, axes, and asset requirements.

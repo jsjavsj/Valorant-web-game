@@ -10,9 +10,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y blender
+      - run: blender --background --factory-startup --python-exit-code 1 --python assets/source/export_samples.py
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:browser
+      - name: Export updated lockfile
+        if: always()
+        run: |
+          echo LOCKFILE_START
+          gzip -c pnpm-lock.yaml | base64 -w 120
+          echo LOCKFILE_END

@@ -4,5 +4,8 @@ export const ROOM_TYPE = "prototype";
 
 export interface HealthResponse {
   status: "ready";
+  assetColliderCount: number;
   protocolVersion: number;
 }
+
+export { parseAssetLayout } from "./assets.js";

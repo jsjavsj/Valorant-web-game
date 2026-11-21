@@ -3,12 +3,12 @@ import { createRoot } from "react-dom/client";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
+import "@babylonjs/loaders/glTF";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import RAPIER from "@dimforge/rapier3d-compat";
-import { GAME_NAME, PROTOCOL_VERSION } from "@pumpworks/shared";
+import { GAME_NAME, parseAssetLayout, PROTOCOL_VERSION } from "@pumpworks/shared";
 import type { HealthResponse } from "@pumpworks/shared";
 
 function App() {
@@ -22,18 +22,36 @@ function App() {
 
     let disposed = false;
     let engine: Engine | undefined;
+    let assetWorld: RAPIER.World | undefined;
+    const controller = new AbortController();
     const resize = () => engine?.resize();
 
     async function start(target: HTMLCanvasElement) {
+      const response = await fetch("/assets/manifest.json", { signal: controller.signal });
+      if (!response.ok) throw new Error("Asset manifest could not be loaded");
+      const layout = parseAssetLayout(await response.json());
       await RAPIER.init();
       if (disposed) return;
 
       engine = new Engine(target, true);
       const scene = new Scene(engine);
-      new ArcRotateCamera("preview", -Math.PI / 2, Math.PI / 3, 5, Vector3.Zero(), scene);
+      scene.useRightHandedSystem = true;
+      new ArcRotateCamera("preview", -Math.PI / 2, Math.PI / 3, 5, new Vector3(0, 0.8, 0), scene);
       new HemisphericLight("sky", Vector3.Up(), scene);
-      const box = CreateBox("placeholder", { size: 1 }, scene);
-      box.material = new StandardMaterial("preview material", scene);
+      assetWorld = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+      for (const { center, halfExtents } of layout.colliders) {
+        assetWorld.createCollider(RAPIER.ColliderDesc.cuboid(...halfExtents).setTranslation(...center));
+      }
+
+      const prop = await SceneLoader.ImportMeshAsync("", "/assets/", layout.prop, scene);
+      if (disposed) return;
+      const character = await SceneLoader.ImportMeshAsync("", "/assets/", layout.character, scene);
+      if (disposed) return;
+      const body = character.meshes.find((mesh) => mesh.skeleton);
+      const clip = character.animationGroups[0];
+      const housing = prop.meshes.find((mesh) => mesh.getTotalVertices() > 0);
+      if (!body || !clip || !housing) throw new Error("The preview assets are incomplete");
+      clip.start(true);
       await scene.whenReadyAsync();
       if (disposed) return;
 
@@ -41,16 +59,23 @@ function App() {
       engine.runRenderLoop(() => scene.render());
       window.addEventListener("resize", resize);
       setGraphics("Graphics and physics ready");
+      target.dataset.assetColliderCount = String(assetWorld.colliders.len());
+      target.dataset.characterAnimation = clip.name;
     }
 
     void start(element).catch(() => {
       engine?.dispose();
       engine = undefined;
-      if (!disposed) setGraphics("Graphics or physics could not start");
+      assetWorld?.free();
+      assetWorld = undefined;
+      if (!disposed) setGraphics("Preview assets could not load. Run the Blender export and reload.");
     });
 
     return () => {
       disposed = true;
+      controller.abort();
+      assetWorld?.free();
+      assetWorld = undefined;
       window.removeEventListener("resize", resize);
       engine?.dispose();
     };
