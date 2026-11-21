@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { Room, Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import RAPIER from "@dimforge/rapier3d-compat";
-import { parseAssetLayout, PROTOCOL_VERSION, ROOM_TYPE } from "@pumpworks/shared";
+import { addArenaColliders, MOVEMENT_STEP, parseAssetLayout, PROTOCOL_VERSION, ROOM_TYPE } from "@pumpworks/shared";
 import type { HealthResponse } from "@pumpworks/shared";
 
 class PrototypeRoom extends Room {
@@ -27,6 +27,11 @@ for (const { center, halfExtents } of layout.colliders) {
   assetWorld.createCollider(RAPIER.ColliderDesc.cuboid(...halfExtents).setTranslation(...center));
 }
 
+const assetColliderCount = assetWorld.colliders.len();
+addArenaColliders(assetWorld);
+assetWorld.timestep = MOVEMENT_STEP;
+assetWorld.step();
+
 const httpServer = createServer((request, response) => {
   if (request.method !== "GET" || request.url !== "/health") {
     response.writeHead(404).end();
@@ -36,7 +41,7 @@ const httpServer = createServer((request, response) => {
   const body: HealthResponse = {
     status: "ready",
     protocolVersion: PROTOCOL_VERSION,
-    assetColliderCount: assetWorld.colliders.len(),
+    assetColliderCount,
   };
   response.writeHead(200, { "content-type": "application/json" });
   response.end(JSON.stringify(body));

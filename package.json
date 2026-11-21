@@ -7,11 +7,12 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --filter './apps/**' dev",
+    "dev": "pnpm -r --parallel --filter @pumpworks/client --filter @pumpworks/server dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:movement": "pnpm --filter @pumpworks/shared test:movement"
   },
   "devDependencies": {
     "eslint": "9.39.1",

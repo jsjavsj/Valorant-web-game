@@ -9,3 +9,6 @@ export interface HealthResponse {
 }
 
 export { parseAssetLayout } from "./assets.js";
+
+export { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP } from "./movement.js";
+export type { MoveInput } from "./movement.js";

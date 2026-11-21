@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
@@ -10,6 +9,7 @@ import { Scene } from "@babylonjs/core/scene";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { GAME_NAME, parseAssetLayout, PROTOCOL_VERSION } from "@pumpworks/shared";
 import type { HealthResponse } from "@pumpworks/shared";
+import { attachFirstPerson } from "./first-person";
 
 function App() {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -23,6 +23,7 @@ function App() {
     let disposed = false;
     let engine: Engine | undefined;
     let assetWorld: RAPIER.World | undefined;
+    let controls: ReturnType<typeof attachFirstPerson> | undefined;
     const controller = new AbortController();
     const resize = () => engine?.resize();
 
@@ -36,7 +37,6 @@ function App() {
       engine = new Engine(target, true);
       const scene = new Scene(engine);
       scene.useRightHandedSystem = true;
-      new ArcRotateCamera("preview", -Math.PI / 2, Math.PI / 3, 5, new Vector3(0, 0.8, 0), scene);
       new HemisphericLight("sky", Vector3.Up(), scene);
       assetWorld = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
       for (const { center, halfExtents } of layout.colliders) {
@@ -64,6 +64,8 @@ function App() {
       target.dataset.characterDimensions = droneDimensions.asArray().join(",");
       clip.stop();
       clip.start(true);
+      target.dataset.assetColliderCount = String(assetWorld.colliders.len());
+      controls = attachFirstPerson(scene, assetWorld, target);
       await scene.whenReadyAsync();
       if (disposed) return;
 
@@ -76,14 +78,20 @@ function App() {
           scene.onAfterRenderObservable.remove(checkMotion);
         }
       });
-      engine.runRenderLoop(() => scene.render());
+      const movement = controls;
+      const renderer = engine;
+      renderer.runRenderLoop(() => {
+        movement.update(renderer.getDeltaTime() / 1000);
+        scene.render();
+      });
       window.addEventListener("resize", resize);
       setGraphics("Graphics and physics ready");
-      target.dataset.assetColliderCount = String(assetWorld.colliders.len());
       target.dataset.characterAnimation = clip.name;
     }
 
     void start(element).catch((error: unknown) => {
+      controls?.dispose();
+      controls = undefined;
       engine?.dispose();
       engine = undefined;
       assetWorld?.free();
@@ -97,6 +105,7 @@ function App() {
     return () => {
       disposed = true;
       controller.abort();
+      controls?.dispose();
       assetWorld?.free();
       assetWorld = undefined;
       window.removeEventListener("resize", resize);
@@ -127,6 +136,7 @@ function App() {
       <h1>{GAME_NAME}</h1>
       <p role="status">{server}</p>
       <p role="status">{graphics}</p>
+      <p>Click the arena to look around. WASD to move, Shift to run, Ctrl to crouch, Space to jump, and Esc to release the mouse.</p>
       <canvas ref={canvas} aria-label="3D scene preview" style={{ width: "100%", height: 360 }} />
     </main>
   );
