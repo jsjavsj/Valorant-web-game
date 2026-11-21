@@ -157,6 +157,13 @@ function App() {
           setPlayers(snapshot.players.length);
           const self = snapshot.players.find((player) => player.id === sessionId);
           if (self) setHealth(self.health);
+          const other = snapshot.players.find((player) => player.id !== sessionId);
+          const target = canvas.current;
+          if (target) {
+            target.dataset.remoteAlive = other?.alive.toString() ?? "";
+            target.dataset.remotePosition = other?.alive ?
+              [other.x, other.y, other.z].map((value) => value.toFixed(3)).join(",") : "";
+          }
         },
         () => {
           network.current = null;

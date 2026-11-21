@@ -10,7 +10,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - name: Verify the clean build requires exported assets
         run: |
           if pnpm --filter @pumpworks/client build > missing-assets.log 2>&1; then
@@ -27,9 +27,3 @@ jobs:
       - run: pnpm test:movement
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:browser
-      - name: Export updated lockfile
-        if: always()
-        run: |
-          echo LOCKFILE_START
-          gzip -c pnpm-lock.yaml | base64 -w 120
-          echo LOCKFILE_END

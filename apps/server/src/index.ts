@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { parseAssetLayout, PROTOCOL_VERSION, RAPIER, ROOM_TYPE } from "@pumpworks/shared";
@@ -23,11 +24,11 @@ const httpServer = createServer();
 const gameServer = new Server({
   transport: new WebSocketTransport({ server: httpServer }),
   express: (app) => {
-    app.get("/health", (_request, response) => {
+    app.get("/health", (_request: IncomingMessage, response: ServerResponse) => {
       const body: HealthResponse = {
         status: "ready", protocolVersion: PROTOCOL_VERSION, assetColliderCount: layout.colliders.length,
       };
-      response.json(body);
+      response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(body));
     });
   },
 });

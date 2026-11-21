@@ -134,10 +134,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
       mesh.scaling.y = player.crouched ? 0.65 : 1;
       mesh.position.set(player.x, player.y + 0.825 * mesh.scaling.y, player.z);
     }
-    canvas.dataset.remoteAlive = players.find((player) => player.id !== room?.sessionId)?.alive.toString() ?? "";
     canvas.dataset.roomId = room?.id ?? "";
-    const other = remote[0];
-    canvas.dataset.remotePosition = other ? [other.x, other.y, other.z].map((v) => v.toFixed(3)).join(",") : "";
     const { x, y, z } = self ?? movement.feet;
     camera.position.set(x, y + (self?.eyeHeight ?? movement.eyeHeight), z);
     const aim = new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
