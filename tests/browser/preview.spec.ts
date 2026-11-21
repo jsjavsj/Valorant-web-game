@@ -40,7 +40,9 @@ test("moves in first person, stops at the pump and clears input on blur", async 
   await page.goto("/");
   await expect(page.getByText("Graphics and physics ready", { exact: true })).toBeVisible();
   const arena = page.getByLabel("3D scene preview");
-  await arena.click();
+  await arena.hover();
+  await page.mouse.down();
+  await page.mouse.up();
   await expect.poll(() => page.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
 
   async function depth() {

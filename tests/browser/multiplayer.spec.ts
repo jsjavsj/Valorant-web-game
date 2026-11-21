@@ -24,7 +24,9 @@ test("two browsers share server positions and a departing player is removed", as
     }
     await expect.poll(remoteDepth).toBeGreaterThan(4.8);
     await left.bringToFront();
-    await first.click();
+    await first.hover();
+    await left.mouse.down();
+    await left.mouse.up();
     await expect.poll(() => left.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
     await left.keyboard.down("w");
     await expect.poll(remoteDepth, { timeout: 15_000 }).toBeLessThan(4);
@@ -33,7 +35,9 @@ test("two browsers share server positions and a departing player is removed", as
     await expect.poll(() => left.evaluate(() => document.pointerLockElement === null)).toBe(true);
 
     await right.bringToFront();
-    await second.click();
+    await second.hover();
+    await right.mouse.down();
+    await right.mouse.up();
     await expect.poll(() => right.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
     await right.keyboard.down("w");
     await expect(first).toHaveAttribute("data-remote-alive", "false", { timeout: 12_000 });
