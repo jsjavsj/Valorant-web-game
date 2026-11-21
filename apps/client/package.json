@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/check-assets.mjs && vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -13,7 +13,8 @@
     "@babylonjs/core": "8.0.0",
     "@dimforge/rapier3d-compat": "0.19.3",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "@babylonjs/loaders": "8.0.0"
   },
   "devDependencies": {
     "@types/react": "19.2.2",

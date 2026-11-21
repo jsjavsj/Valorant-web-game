@@ -11,6 +11,16 @@ jobs:
         with:
           node-version: "22"
       - run: pnpm install --frozen-lockfile
+      - name: Verify the clean build requires exported assets
+        run: |
+          if pnpm --filter @pumpworks/client build > missing-assets.log 2>&1; then
+            cat missing-assets.log
+            echo "Expected the client build to fail before asset export."
+            exit 1
+          fi
+          grep -F "blender --background --factory-startup --python-exit-code 1" missing-assets.log
+      - run: sudo apt-get update && sudo apt-get install -y blender python3-numpy
+      - run: PYTHONPATH=/usr/lib/python3/dist-packages blender --python-use-system-env --background --factory-startup --python-exit-code 1 --python assets/source/export_samples.py
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm typecheck

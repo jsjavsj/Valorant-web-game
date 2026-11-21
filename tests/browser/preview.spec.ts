@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("renders the preview and connects to the game server", async ({ page }) => {
+test("renders the built preview, including the drone at its authored scale in motion", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.addInitScript(() => {
@@ -21,5 +21,16 @@ test("renders the preview and connects to the game server", async ({ page }) => 
   await expect(page.getByText("Game server ready", { exact: true })).toBeVisible();
   await expect(page.getByText("Graphics and physics ready", { exact: true })).toBeVisible();
   await expect(page.getByLabel("3D scene preview")).toHaveAttribute("data-preview-drawn", "true");
+  const preview = page.getByLabel("3D scene preview");
+  await expect(preview).toHaveAttribute("data-character-animation", "Idle");
+  const dimensions = (await preview.getAttribute("data-character-dimensions"))?.split(",").map(Number);
+  expect(dimensions).toHaveLength(3);
+  expect(dimensions?.[0]).toBeCloseTo(0.65, 3);
+  expect(dimensions?.[1]).toBeCloseTo(1.8, 3);
+  expect(dimensions?.[2]).toBeCloseTo(0.65, 3);
+  await expect(preview).toHaveAttribute("data-character-moved", "true");
+  const health = await (await page.request.get("/health")).json();
+  expect(health.assetColliderCount).toBe(1);
+  await expect(preview).toHaveAttribute("data-asset-collider-count", "1");
   expect(pageErrors).toEqual([]);
 });
