@@ -6,10 +6,11 @@ import { addArenaColliders, CharacterMovement, MovementClock, MOVEMENT_STEP } fr
 await RAPIER.init();
 const idle = { forward: 0, strafe: 0, yaw: 0, run: false, crouch: false, jump: false };
 
-function arena(t, feet) {
+function arena(t, feet, addObstacle) {
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   world.timestep = MOVEMENT_STEP;
   addArenaColliders(world);
+  addObstacle?.(world);
   const player = new CharacterMovement(world, feet);
   world.step();
   t.after(() => world.free());
@@ -73,4 +74,30 @@ test("cannot stand under a low beam and can stand again after clearing it", (t) 
   assert.ok(player.crouched);
   repeat(75, { ...idle, forward: 1 });
   assert.equal(player.crouched, false);
+});
+
+test("the pump blocks a head-on approach", (t) => {
+  const { player, repeat } = arena(t, undefined, (world) => {
+    world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5).setTranslation(-1, 0.5, 0));
+  });
+  repeat(120, { ...idle, forward: 1 });
+  assert.ok(player.feet.z > 0.8 && player.feet.z < 0.9);
+});
+
+test("spawn checks the full capsule against the arena and newly created players", (t) => {
+  const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+  t.after(() => world.free());
+  addArenaColliders(world);
+  world.step();
+  const preferred = { x: 1.8, y: 0.04, z: 5 };
+  assert.deepEqual(CharacterMovement.findSpawn(world, preferred, []), preferred);
+  const occupant = new CharacterMovement(world, preferred);
+  const fallback = CharacterMovement.findSpawn(world, preferred, [occupant]);
+  assert.ok(fallback);
+  assert.ok(Math.hypot(fallback.x - preferred.x, fallback.z - preferred.z) >= 0.64);
+
+  const underBeam = { x: 2.4, y: 0.04, z: 2 };
+  const besideBeam = CharacterMovement.findSpawn(world, underBeam, []);
+  assert.ok(besideBeam);
+  assert.notDeepEqual(besideBeam, underBeam);
 });

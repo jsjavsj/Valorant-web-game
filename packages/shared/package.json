@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test:movement": "node --test test/movement.test.mjs"
+    "test:movement": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.19.3"

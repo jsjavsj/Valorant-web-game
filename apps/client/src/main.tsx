@@ -8,10 +8,17 @@ import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
 import { GAME_NAME, parseAssetLayout, PROTOCOL_VERSION, RAPIER } from "@pumpworks/shared";
 import type { HealthResponse } from "@pumpworks/shared";
+import { connectMatch } from "./multiplayer";
+import type { MatchConnection } from "./multiplayer";
 import { attachFirstPerson } from "./first-person";
 
 function App() {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const network = useRef<MatchConnection | null>(null);
+  const [connection, setConnection] = useState<"offline" | "joining" | "online" | "leaving">("offline");
+  const [health, setHealth] = useState(100);
+  const [players, setPlayers] = useState(0);
+  const [matchError, setMatchError] = useState("");
   const [graphics, setGraphics] = useState("Starting graphics and physics…");
   const [server, setServer] = useState("Checking game server…");
 
@@ -64,7 +71,7 @@ function App() {
       clip.stop();
       clip.start(true);
       target.dataset.assetColliderCount = String(assetWorld.colliders.len());
-      controls = attachFirstPerson(scene, assetWorld, target);
+      controls = attachFirstPerson(scene, assetWorld, target, () => network.current);
       await scene.whenReadyAsync();
       if (disposed) return;
 
@@ -130,11 +137,62 @@ function App() {
     return () => controller.abort();
   }, []);
 
+  async function toggleMatch() {
+    if (network.current) {
+      setConnection("leaving");
+      try { await network.current.leave(); }
+      catch { setMatchError("The connection already closed."); }
+      finally {
+        network.current = null;
+        setPlayers(0);
+        setConnection("offline");
+      }
+      return;
+    }
+    setConnection("joining");
+    setMatchError("");
+    try {
+      network.current = await connectMatch(
+        (snapshot, sessionId) => {
+          setPlayers(snapshot.players.length);
+          const self = snapshot.players.find((player) => player.id === sessionId);
+          if (self) setHealth(self.health);
+          const other = snapshot.players.find((player) => player.id !== sessionId);
+          const target = canvas.current;
+          if (target) {
+            target.dataset.remoteAlive = other?.alive.toString() ?? "";
+            target.dataset.remotePosition = other?.alive ?
+              [other.x, other.y, other.z].map((value) => value.toFixed(3)).join(",") : "";
+          }
+        },
+        () => {
+          network.current = null;
+          setPlayers(0);
+          setConnection("offline");
+        },
+      );
+      setConnection("online");
+    } catch {
+      setMatchError("Unable to join the match server. Try again.");
+      setConnection("offline");
+    }
+  }
+
   return (
     <main style={{ maxWidth: 800, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui" }}>
       <h1>{GAME_NAME}</h1>
       <p role="status">{server}</p>
       <p role="status">{graphics}</p>
+      <button type="button" disabled={connection === "joining" || connection === "leaving"}
+        onClick={() => void toggleMatch()}>
+        {connection === "online" ? "Leave match" : connection === "joining" ? "Joining…" : "Join match"}
+      </button>
+      {connection === "online" && <>
+        <p role="status">{players}/2 players connected</p>
+        <p role="status">{health === 0 ? "Respawning…" : `Health: ${health}`}</p>
+        <p>The red pad tests knockouts and respawns.</p>
+      </>}
+      {matchError && <p role="alert">{matchError}</p>}
       <p>Click the arena to look around. WASD to move, Shift to run, Ctrl to crouch, Space to jump, and Esc to release the mouse.</p>
       <canvas ref={canvas} aria-label="3D scene preview" style={{ width: "100%", height: 360 }} />
     </main>

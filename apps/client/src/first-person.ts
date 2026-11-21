@@ -4,14 +4,15 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import type { Scene } from "@babylonjs/core/scene";
+import type { MatchConnection } from "./multiplayer";
 import type RAPIER from "@dimforge/rapier3d-compat";
-import { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP } from "@pumpworks/shared";
+import { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP, RESET_PAD } from "@pumpworks/shared";
 
 const CONTROL_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Space",
 ]);
 
-export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTMLCanvasElement) {
+export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTMLCanvasElement, getRoom: () => MatchConnection | null) {
   addArenaColliders(world);
   const masonry = new StandardMaterial("masonry", scene);
   masonry.diffuseColor = new Color3(0.24, 0.34, 0.38);
@@ -42,6 +43,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   const clear = () => {
     keys.clear();
     jump = false;
+    getRoom()?.stop();
   };
 
   function requestLock() {
@@ -60,6 +62,12 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   function onKeyUp(event: KeyboardEvent) {
     keys.delete(event.code);
   }
+  function onLockChange() {
+    if (!locked()) clear();
+  }
+  function onVisibilityChange() {
+    if (document.hidden) clear();
+  }
   function onMouse(event: MouseEvent) {
     if (!locked()) return;
     yaw += event.movementX * 0.002;
@@ -67,28 +75,75 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   }
 
   canvas.addEventListener("click", requestLock);
-  document.addEventListener("pointerlockchange", clear);
-  document.addEventListener("visibilitychange", clear);
+  document.addEventListener("pointerlockchange", onLockChange);
+  document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener("blur", clear);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("mousemove", onMouse);
 
+  const marker = CreateBox("reset pad", {
+    width: RESET_PAD.halfWidth * 2, height: 0.012, depth: RESET_PAD.halfDepth * 2,
+  }, scene);
+  marker.position.set(RESET_PAD.x, 0.006, RESET_PAD.z);
+  const markerMaterial = new StandardMaterial("reset pad paint", scene);
+  markerMaterial.diffuseColor = new Color3(0.75, 0.10, 0.20);
+  marker.material = markerMaterial;
+  marker.setEnabled(false);
+
+  const avatars = new Map<string, ReturnType<typeof CreateBox>>();
+  const teamColors = {
+    amber: new Color3(0.92, 0.57, 0.18),
+    teal: new Color3(0.19, 0.74, 0.70),
+  };
+  const teamMaterials = {
+    amber: new StandardMaterial("amber team", scene),
+    teal: new StandardMaterial("teal team", scene),
+  };
+  teamMaterials.amber.diffuseColor = teamColors.amber;
+  teamMaterials.teal.diffuseColor = teamColors.teal;
+
   const update = (seconds: number) => {
+    const room = getRoom();
+    marker.setEnabled(Boolean(room));
     clock.advance(seconds, () => {
-      movement.step({
+      const input = {
         forward: Number(keys.has("KeyW")) - Number(keys.has("KeyS")),
         strafe: Number(keys.has("KeyD")) - Number(keys.has("KeyA")),
-        yaw,
+        yaw: Math.atan2(Math.sin(yaw), Math.cos(yaw)),
         run: keys.has("ShiftLeft") || keys.has("ShiftRight"),
         crouch: keys.has("ControlLeft") || keys.has("ControlRight"),
         jump,
-      });
+      };
       jump = false;
-      world.step();
+      if (room) room.send(input);
+      else {
+        movement.step(input);
+        world.step();
+      }
     });
-    const { x, y, z } = movement.feet;
-    camera.position.set(x, y + movement.eyeHeight, z);
+    const players = room?.snapshot?.players ?? [];
+    const self = players.find((player) => player.id === room?.sessionId);
+    const remote = players.filter((player) => player.id !== room?.sessionId && player.alive);
+    for (const [id, mesh] of avatars) {
+      if (!remote.some((player) => player.id === id)) {
+        mesh.dispose();
+        avatars.delete(id);
+      }
+    }
+    for (const player of remote) {
+      let mesh = avatars.get(player.id);
+      if (!mesh) {
+        mesh = CreateBox("remote player", { width: 0.58, height: 1.65, depth: 0.58 }, scene);
+        mesh.material = teamMaterials[player.team];
+        avatars.set(player.id, mesh);
+      }
+      mesh.scaling.y = player.crouched ? 0.65 : 1;
+      mesh.position.set(player.x, player.y + 0.825 * mesh.scaling.y, player.z);
+    }
+    canvas.dataset.roomId = room?.id ?? "";
+    const { x, y, z } = self ?? movement.feet;
+    camera.position.set(x, y + (self?.eyeHeight ?? movement.eyeHeight), z);
     const aim = new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     camera.setTarget(camera.position.add(aim));
     canvas.dataset.playerPosition = [x, y, z].map((value) => value.toFixed(3)).join(",");
@@ -98,8 +153,8 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     update,
     dispose() {
       canvas.removeEventListener("click", requestLock);
-      document.removeEventListener("pointerlockchange", clear);
-      document.removeEventListener("visibilitychange", clear);
+      document.removeEventListener("pointerlockchange", onLockChange);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("blur", clear);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);

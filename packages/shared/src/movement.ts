@@ -54,6 +54,29 @@ export interface MoveInput {
 }
 
 export class CharacterMovement {
+  static findSpawn(world: RAPIER.World, preferred: RAPIER.Vector, occupants: Iterable<CharacterMovement>) {
+    const standingShape = new RAPIER.Capsule(STANDING_HEIGHT / 2 - RADIUS, RADIUS);
+    const shift = 1.35;
+    const offsets = [[0, 0], [0, shift], [shift, 0], [-shift, 0], [0, -shift], [shift, shift], [-shift, shift]];
+    const players = [...occupants];
+    for (const [dx, dz] of offsets) {
+      const feet = { x: preferred.x + dx, y: preferred.y, z: preferred.z + dz };
+      const center = { ...feet, y: feet.y + STANDING_HEIGHT / 2 };
+      if (world.intersectionWithShape(center, IDENTITY, standingShape, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS)) continue;
+      // A player can move or spawn between physics steps, before the query index updates.
+      const overlapsPlayer = players.some((player) => {
+        const other = player.feet;
+        const segmentGap = Math.max(
+          0,
+          other.y + RADIUS - (feet.y + STANDING_HEIGHT - RADIUS),
+          feet.y + RADIUS - (other.y + player.height - RADIUS),
+        );
+        return Math.hypot(other.x - feet.x, segmentGap, other.z - feet.z) < 2 * RADIUS + SKIN;
+      });
+      if (!overlapsPlayer) return feet;
+    }
+  }
+
   private readonly controller: RAPIER.KinematicCharacterController;
   private readonly collider: RAPIER.Collider;
   private height = STANDING_HEIGHT;
@@ -69,6 +92,11 @@ export class CharacterMovement {
     this.controller.enableSnapToGround(0.23);
     this.controller.setMaxSlopeClimbAngle(Math.PI / 4);
     this.controller.setMinSlopeSlideAngle(Math.PI / 4);
+  }
+
+  dispose() {
+    this.world.removeCharacterController(this.controller);
+    this.world.removeCollider(this.collider, false);
   }
 
   get feet() {
