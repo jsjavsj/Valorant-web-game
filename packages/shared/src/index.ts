@@ -12,3 +12,4 @@ export { parseAssetLayout } from "./assets.js";
 
 export { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP } from "./movement.js";
 export type { MoveInput } from "./movement.js";
+export { default as RAPIER } from "@dimforge/rapier3d-compat";

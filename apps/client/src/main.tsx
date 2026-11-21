@@ -6,8 +6,7 @@ import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import "@babylonjs/loaders/glTF";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
-import RAPIER from "@dimforge/rapier3d-compat";
-import { GAME_NAME, parseAssetLayout, PROTOCOL_VERSION } from "@pumpworks/shared";
+import { GAME_NAME, parseAssetLayout, PROTOCOL_VERSION, RAPIER } from "@pumpworks/shared";
 import type { HealthResponse } from "@pumpworks/shared";
 import { attachFirstPerson } from "./first-person";
 
@@ -22,7 +21,7 @@ function App() {
 
     let disposed = false;
     let engine: Engine | undefined;
-    let assetWorld: RAPIER.World | undefined;
+    let assetWorld: InstanceType<typeof RAPIER.World> | undefined;
     let controls: ReturnType<typeof attachFirstPerson> | undefined;
     const controller = new AbortController();
     const resize = () => engine?.resize();

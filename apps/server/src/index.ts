@@ -2,8 +2,7 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Room, Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
-import RAPIER from "@dimforge/rapier3d-compat";
-import { addArenaColliders, MOVEMENT_STEP, parseAssetLayout, PROTOCOL_VERSION, ROOM_TYPE } from "@pumpworks/shared";
+import { addArenaColliders, MOVEMENT_STEP, parseAssetLayout, PROTOCOL_VERSION, RAPIER, ROOM_TYPE } from "@pumpworks/shared";
 import type { HealthResponse } from "@pumpworks/shared";
 
 class PrototypeRoom extends Room {
