@@ -15,7 +15,7 @@ pnpm dev
 
 Open http://localhost:5173. The client displays a Babylon.js preview and checks the Colyseus server through Vite's development proxy. The server listens on http://127.0.0.1:2567 by default. Set `HOST` and `PORT` in the server environment, and set `PUMPWORKS_SERVER_URL` in `apps/client/.env.local` if you change the server address.
 
-Run `pnpm lint`, `pnpm build`, and `pnpm typecheck` to verify changes. The workspace currently provides a preview, readiness endpoint, and placeholder room. Match play and room joining are later milestones.
+Run `pnpm lint`, `pnpm build`, and `pnpm typecheck` to verify changes. Click the test arena to capture the mouse. Use WASD to move, Shift to run, Ctrl to crouch, Space to jump, and Esc to release the mouse. Try the stairs, the ramp, and the low beam. Run `pnpm test:movement` after a build to exercise the shared controller. Match play and room joining are later milestones.
 
 For the browser smoke test, run `pnpm exec playwright install chromium` once, then run `pnpm build` and `pnpm test:browser`. The test starts both services. On Linux, use `pnpm exec playwright install --with-deps chromium` if browser system libraries are missing.
 
