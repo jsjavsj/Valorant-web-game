@@ -102,8 +102,12 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
   type State = { id: string; health: number; ammo: number; reloading: boolean; x: number; z: number };
   let left: State[] = [];
   let right: State[] = [];
+  let tick = 0;
   shooter.onMessage("snapshot", (s: { players: State[] }) => { left = s.players; });
-  target.onMessage("snapshot", (s: { players: State[] }) => { right = s.players; });
+  target.onMessage("snapshot", (s: { players: State[]; tick: number }) => {
+    right = s.players;
+    tick = s.tick;
+  });
   const ammo = (players: State[]) => players.find((p) => p.id === shooter.sessionId)?.ammo;
   const health = (players: State[]) => players.find((p) => p.id === target.sessionId)?.health;
   try {
@@ -117,10 +121,10 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
     await expect.poll(() => [ammo(left), ammo(right)]).toEqual([8, 8]);
 
     for (let hits = 2; hits <= 4; hits++) {
-      await expect.poll(() => {
-        shooter.send("fire", { yaw: Math.PI / 2, pitch: -0.12 });
-        return health(right);
-      }, { intervals: [300] }).toBe(100 - hits * 25);
+      shooter.send("fire", { yaw: Math.PI / 2, pitch: -0.12 });
+      await expect.poll(() => health(right)).toBe(100 - hits * 25);
+      const nextShot = tick + 15;
+      await expect.poll(() => tick).toBeGreaterThanOrEqual(nextShot);
     }
     await expect.poll(() => health(left)).toBe(0);
     await expect.poll(() => health(right), { timeout: 8_000 }).toBe(100);
