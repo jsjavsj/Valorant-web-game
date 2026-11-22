@@ -13,9 +13,13 @@ import { connectMatch } from "./multiplayer";
 import type { MatchConnection, MatchMode } from "./multiplayer";
 import { attachFirstPerson } from "./first-person";
 
+const courtyard = new URLSearchParams(window.location.search).get("map") === "courtyard";
+
 function App() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const network = useRef<MatchConnection | null>(null);
+  const controlsRef = useRef<ReturnType<typeof attachFirstPerson> | undefined>(undefined);
+  const [overview, setOverview] = useState(false);
   const [party, setParty] = useState<PartyState>();
   const [invite, setInvite] = useState("");
   const [privateMatch, setPrivateMatch] = useState(false);
@@ -39,6 +43,26 @@ function App() {
     const resize = () => engine?.resize();
 
     async function start(target: HTMLCanvasElement) {
+      if (courtyard) {
+        await RAPIER.init();
+        if (disposed) return;
+        const renderer = engine = new Engine(target, true);
+        const scene = new Scene(renderer);
+        scene.useRightHandedSystem = true;
+        assetWorld = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+        const movement = controls = attachFirstPerson(scene, assetWorld, target, () => null, true);
+        controlsRef.current = movement;
+        await scene.whenReadyAsync();
+        if (disposed) return;
+        renderer.runRenderLoop(() => {
+          movement.update(renderer.getDeltaTime() / 1000);
+          scene.render();
+        });
+        window.addEventListener("resize", resize);
+        setGraphics("Graphics and physics ready");
+        return;
+      }
+
       const response = await fetch("/assets/manifest.json", { signal: controller.signal });
       if (!response.ok) throw new Error("Asset manifest could not be loaded");
       const layout = parseAssetLayout(await response.json());
@@ -109,13 +133,14 @@ function App() {
       assetWorld = undefined;
       if (!disposed) {
         console.error("Preview initialization failed", error);
-        setGraphics("Preview assets could not load. Run the Blender export and reload.");
+        setGraphics(courtyard ? "Courtyard preview could not load." : "Preview assets could not load. Run the Blender export and reload.");
       }
     });
 
     return () => {
       disposed = true;
       controller.abort();
+      controlsRef.current = undefined;
       controls?.dispose();
       assetWorld?.free();
       assetWorld = undefined;
@@ -125,6 +150,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (courtyard) return;
     const controller = new AbortController();
 
     async function checkServer() {
@@ -200,9 +226,26 @@ function App() {
   const host = sessionId === party?.host;
   const ready = Boolean(sessionId && party?.ready.includes(sessionId));
 
+  if (courtyard) return (
+    <main style={{ maxWidth: 1120, margin: "1.5rem auto", padding: "0 1rem", fontFamily: "system-ui" }}>
+      <nav><a href="./">Back to Pumpworks</a></nav>
+      <h1>Floodgate Courtyard</h1>
+      <p role="status">{graphics}</p>
+      <button type="button" disabled={graphics !== "Graphics and physics ready"} aria-pressed={overview}
+        onClick={() => {
+          controlsRef.current?.setOverview(!overview);
+          setOverview(!overview);
+        }}>Overhead view</button>
+      <p>Click the courtyard to look around. WASD moves, Ctrl crouches, and Esc releases the mouse.</p>
+      <canvas ref={canvas} aria-label="Floodgate Courtyard preview"
+        style={{ width: "100%", height: "min(65vh, 720px)", display: "block" }} />
+    </main>
+  );
+
   return (
     <main style={{ maxWidth: 800, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui" }}>
       <h1>{GAME_NAME}</h1>
+      <p><a href="?map=courtyard">Explore Floodgate Courtyard</a></p>
       <p role="status">{server}</p>
       <p role="status">{graphics}</p>
       <button type="button" disabled={connection === "joining" || connection === "leaving"}
