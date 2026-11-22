@@ -20,11 +20,18 @@ export const ARENA_BOXES = [
   { name: "low overhead beam", center: [2.4, 1.5, 2], size: [1.75, 0.35, 1.8] },
 ] as const;
 
-export function addArenaColliders(world: RAPIER.World) {
-  for (const box of ARENA_BOXES) {
+export interface ArenaBox {
+  name: string;
+  center: readonly [number, number, number];
+  size: readonly [number, number, number];
+  pitch?: number;
+}
+
+export function addArenaColliders(world: RAPIER.World, boxes: readonly ArenaBox[] = ARENA_BOXES) {
+  for (const box of boxes) {
     const [x, y, z] = box.size;
     const [cx, cy, cz] = box.center;
-    const pitch = "pitch" in box ? box.pitch : 0;
+    const pitch = box.pitch ?? 0;
     const rotation = { x: Math.sin(pitch / 2), y: 0, z: 0, w: Math.cos(pitch / 2) };
     world.createCollider(RAPIER.ColliderDesc.cuboid(x / 2, y / 2, z / 2)
       .setTranslation(cx, cy, cz).setRotation(rotation));
