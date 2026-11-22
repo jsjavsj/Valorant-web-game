@@ -20,3 +20,5 @@ Run `pnpm lint`, `pnpm build`, and `pnpm typecheck` to verify changes. Click the
 For the browser smoke test, run `pnpm exec playwright install chromium` once, then run `pnpm build` and `pnpm test:browser`. The test starts both services. On Linux, use `pnpm exec playwright install --with-deps chromium` if browser system libraries are missing.
 
 See the [asset pipeline](docs/references/asset-pipeline.md) for units, axes, and asset requirements.
+
+Create a private party to share an invite code. Both players must mark Ready before the host can start. The host can instead fill the guest slot with a stationary training bot. Duplicate-agent selection is saved in the lobby for the agent-selection milestone. Invite codes expire after 30 minutes and new guests cannot join once the match starts.

@@ -7,14 +7,18 @@ import "@babylonjs/loaders/glTF";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
 import { GAME_NAME, parseAssetLayout, PROTOCOL_VERSION, RAPIER } from "@pumpworks/shared";
-import type { HealthResponse } from "@pumpworks/shared";
+import type { HealthResponse, PartyState } from "@pumpworks/shared";
+import { PARTY_CODE } from "@pumpworks/shared";
 import { connectMatch } from "./multiplayer";
-import type { MatchConnection } from "./multiplayer";
+import type { MatchConnection, MatchMode } from "./multiplayer";
 import { attachFirstPerson } from "./first-person";
 
 function App() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const network = useRef<MatchConnection | null>(null);
+  const [party, setParty] = useState<PartyState>();
+  const [invite, setInvite] = useState("");
+  const [privateMatch, setPrivateMatch] = useState(false);
   const [connection, setConnection] = useState<"offline" | "joining" | "online" | "leaving">("offline");
   const [health, setHealth] = useState(100);
   const [weapon, setWeapon] = useState({ ammo: 8, reloading: false });
@@ -138,7 +142,7 @@ function App() {
     return () => controller.abort();
   }, []);
 
-  async function toggleMatch() {
+  async function toggleMatch(mode: MatchMode = { kind: "quick" }) {
     if (network.current) {
       setConnection("leaving");
       try { await network.current.leave(); }
@@ -146,16 +150,20 @@ function App() {
       finally {
         network.current = null;
         setPlayers(0);
+        setParty(undefined);
         setConnection("offline");
       }
       return;
     }
+    setPrivateMatch(mode.kind !== "quick");
     setConnection("joining");
     setMatchError("");
     try {
       network.current = await connectMatch(
+        mode,
         (snapshot, sessionId) => {
           setPlayers(snapshot.players.length);
+          setParty(snapshot.party);
           const self = snapshot.players.find((player) => player.id === sessionId);
           if (self) {
             setHealth(self.health);
@@ -172,16 +180,25 @@ function App() {
         () => {
           network.current = null;
           setPlayers(0);
+          setParty(undefined);
           setConnection("offline");
         },
         () => canvas.current?.animate([{ opacity: 0.8 }, { opacity: 1 }], 95),
       );
       setConnection("online");
     } catch {
-      setMatchError("Unable to join the match server. Try again.");
+      setMatchError(mode.kind === "invite" ? "Could not join. Check that the code is valid and the party is open." : "Unable to reach the match server. Try again.");
+      setParty(undefined);
       setConnection("offline");
     }
   }
+
+  const online = connection === "online";
+  const playing = online && (!privateMatch || party?.started);
+  const waiting = online && party && !party.started;
+  const sessionId = network.current?.sessionId;
+  const host = sessionId === party?.host;
+  const ready = Boolean(sessionId && party?.ready.includes(sessionId));
 
   return (
     <main style={{ maxWidth: 800, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui" }}>
@@ -192,8 +209,46 @@ function App() {
         onClick={() => void toggleMatch()}>
         {connection === "online" ? "Leave match" : connection === "joining" ? "Joining…" : "Join match"}
       </button>
-      {connection === "online" && <>
-        <p role="status">{players}/2 players connected</p>
+      {connection === "offline" && <>
+        <button type="button" onClick={() => void toggleMatch({ kind: "create" })}>Create private party</button>
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          if (PARTY_CODE.test(invite)) void toggleMatch({ kind: "invite", code: invite });
+        }}>
+          <label>Party code <input value={invite} maxLength={10} autoComplete="off"
+            onChange={(event) => setInvite(event.target.value.trim().toUpperCase())} /></label>
+          <button type="submit" disabled={!PARTY_CODE.test(invite)}>Join by code</button>
+        </form>
+      </>}
+      {waiting && <section aria-label="Private party">
+        <p>Party code: <output aria-label="Invite code">{party.code}</output></p>
+        <p>{players}/2 players · {party.ready.length}/{players} ready</p>
+        {party.expired && <p role="status">Party code expired. Create a new party to play.</p>}
+        <p>Host: {party.settings.hostTeam} · Guest: {party.settings.hostTeam === "amber" ? "teal" : "amber"}</p>
+        {host && <fieldset disabled={party.expired}>
+          <legend>Host settings</legend>
+          <label>Host team <select value={party.settings.hostTeam}
+            onChange={(event) => network.current?.configure({
+              ...party.settings, hostTeam: event.target.value === "teal" ? "teal" : "amber",
+            })}>
+            <option value="amber">Amber</option>
+            <option value="teal">Teal</option>
+          </select></label>
+          <label><input type="checkbox" checked={party.settings.bot} disabled={players > 1}
+            onChange={(event) => network.current?.configure({ ...party.settings, bot: event.target.checked })} />
+            Add stationary training bot</label>
+          <label><input type="checkbox" checked={party.settings.allowDuplicateAgents}
+            onChange={(event) => network.current?.configure({ ...party.settings, allowDuplicateAgents: event.target.checked })} />
+            Allow duplicate agents</label>
+          <button type="button" disabled={(!party.settings.bot && players !== 2) || party.ready.length !== players}
+            onClick={() => network.current?.start()}>Start match</button>
+        </fieldset>}
+        <button type="button" disabled={party.expired} onClick={() => network.current?.ready(!ready)}>
+          {ready ? "Not ready" : "Ready"}
+        </button>
+      </section>}
+      {playing && <>
+        <p role="status">{party?.settings.bot ? "Solo match · Training bot active" : `${players}/2 players connected`}</p>
         <p role="status">{health === 0 ? "Respawning…" : `Health: ${health}`}</p>
         <p role="status">{weapon.reloading ? "Reloading…" : `Practice sidearm: ${weapon.ammo} rounds`}</p>
         <p>Left click to fire · R to reload</p>
@@ -202,7 +257,7 @@ function App() {
       <p>Click the arena to look around. WASD to move, Shift to run, Ctrl to crouch, Space to jump, and Esc to release the mouse.</p>
       <div style={{ position: "relative" }}>
         <canvas ref={canvas} aria-label="3D scene preview" style={{ width: "100%", height: 360, display: "block" }} />
-        {connection === "online" && <span aria-hidden="true" style={{
+        {playing && <span aria-hidden="true" style={{
           pointerEvents: "none", position: "absolute", left: "50%", top: "50%",
           color: "white", transform: "translate(-50%, -50%)",
         }}>+</span>}

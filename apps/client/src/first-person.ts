@@ -48,6 +48,8 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   };
 
   function requestLock() {
+    const party = getRoom()?.snapshot?.party;
+    if (party && !party.started) return;
     try {
       void canvas.requestPointerLock()?.catch(() => clear());
     } catch {
