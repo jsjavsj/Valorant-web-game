@@ -39,9 +39,13 @@ test("two browsers share server positions and a departing player is removed", as
       };
 
       const schedule = window.requestAnimationFrame.bind(window);
-      window.requestAnimationFrame = (callback) => schedule((time) => {
-        if (document.documentElement.dataset.pauseFrames !== "true") callback(time);
-      });
+      window.requestAnimationFrame = (callback) => {
+        const runFrame = (time: number) => {
+          if (document.documentElement.dataset.pauseFrames === "true") schedule(runFrame);
+          else callback(time);
+        };
+        return schedule(runFrame);
+      };
     });
     await left.goto("/");
     await right.goto("/");
