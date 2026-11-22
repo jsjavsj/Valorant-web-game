@@ -28,6 +28,7 @@ interface Player {
   respawnTick: number;
   lastPosition: { x: number; y: number; z: number };
   spawnTick: number;
+  stanceChangedTick: number;
   lastShotViewTick: number;
 }
 
@@ -179,6 +180,7 @@ export class MatchRoom extends Room {
             player.movement = new CharacterMovement(this.world, spawn);
             player.respawnTick = 0;
             player.spawnTick = this.tick + 1;
+            player.stanceChangedTick = player.spawnTick;
             player.health = PLAYER_HEALTH;
             player.ammo = SIDEARM.capacity;
             player.nextShotTick = this.tick;
@@ -191,7 +193,9 @@ export class MatchRoom extends Room {
           player.ammo = SIDEARM.capacity;
         }
         if (this.tick - player.lastInputTick >= 15) player.input = IDLE_MOVE;
+        const wasCrouched = player.movement.crouched;
         player.movement.step(player.input);
+        if (player.movement.crouched !== wasCrouched) player.stanceChangedTick = this.tick + 1;
         player.lastAppliedInputSeq = player.lastSeq;
         const feet = player.movement.feet;
         if (isOnResetPad(feet) || feet.y < -5) {
@@ -223,7 +227,7 @@ export class MatchRoom extends Room {
       team, health: PLAYER_HEALTH, ammo: SIDEARM.capacity, nextShotTick: this.tick, reloadTick: 0,
       movement: new CharacterMovement(this.world, spawn),
       input: IDLE_MOVE, lastSeq: -1, lastAppliedInputSeq: -1, lastInputTick: this.tick, respawnTick: 0, lastPosition: spawn,
-      spawnTick: this.tick, lastShotViewTick: -1,
+      spawnTick: this.tick, stanceChangedTick: this.tick, lastShotViewTick: -1,
     });
   }
 
@@ -301,8 +305,8 @@ export class MatchRoom extends Room {
   }
 
   private sendSnapshot() {
-    const players = [...this.players].map(([id, { team, movement, respawnTick, lastPosition, health, ammo, reloadTick, lastAppliedInputSeq, spawnTick }]): MatchPlayer => ({
-      id, team, lastAppliedInputSeq, spawnTick,
+    const players = [...this.players].map(([id, { team, movement, respawnTick, lastPosition, health, ammo, reloadTick, lastAppliedInputSeq, spawnTick, stanceChangedTick }]): MatchPlayer => ({
+      id, team, lastAppliedInputSeq, spawnTick, stanceChangedTick,
       ...(respawnTick ? { ...lastPosition, crouched: movement.crouched, grounded: false, verticalSpeed: 0 } : movement.state),
       eyeHeight: movement.eyeHeight,
       health, ammo, reloading: reloadTick !== 0, alive: respawnTick === 0,

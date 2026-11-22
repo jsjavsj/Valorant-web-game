@@ -1,6 +1,8 @@
 import { Client } from "@colyseus/sdk";
-import { MATCH_FIRE, MATCH_INPUT, MATCH_RELOAD, MATCH_SHOT, MATCH_SNAPSHOT, MATCH_STOP, MOVEMENT_STEP, PARTY_READY, PARTY_SETTINGS, PARTY_START, PARTY_TYPE, ROOM_TYPE } from "@pumpworks/shared";
+import { MATCH_FIRE, MATCH_INPUT, MATCH_RELOAD, MATCH_SHOT, MATCH_SNAPSHOT, MATCH_STOP, PARTY_READY, PARTY_SETTINGS, PARTY_START, PARTY_TYPE, ROOM_TYPE } from "@pumpworks/shared";
 import type { MatchPlayer, MatchSnapshot, MoveInput, PartySettings, PlayerInput } from "@pumpworks/shared";
+
+import { sampleRemotePose } from "./remote-pose";
 
 export type MatchMode = { kind: "quick" } | { kind: "create" } | { kind: "invite"; code: string };
 
@@ -25,45 +27,23 @@ export async function connectMatch(mode: MatchMode, onSnapshot: (snapshot: Match
     latest = snapshot;
     onSnapshot(snapshot, room.sessionId);
   });
-  const interpolationFraction = (ticks: number, now: number) =>
-    Math.min(1, Math.max(0, (now - receivedAt) / (ticks * MOVEMENT_STEP * 1000)));
-
-  function interpolate(player: MatchPlayer, now: number) {
-    if (!previous || !latest || previous.party?.started !== latest.party?.started) return;
-    const ticks = latest.tick - previous.tick;
-    // Snap after a longer interruption, a respawn, or a party start.
-    if (ticks <= 0 || ticks > 6) return;
-    const from = previous.players.find((entry) => entry.id === player.id);
-    if (!from?.alive || from.spawnTick !== player.spawnTick || from.team !== player.team) return;
-    const fraction = interpolationFraction(ticks, now);
-    return { from, fraction, tick: previous.tick + Math.round(ticks * fraction) };
-  }
   room.onMessage(MATCH_SHOT, onShot);
   room.onLeave(onLeave);
   return {
     id: room.roomId,
     sessionId: room.sessionId,
     get snapshot() { return latest; },
-    remotePosition(player: MatchPlayer, now: number) {
-      const sample = interpolate(player, now);
-      if (!sample) return player;
-      const { from, fraction } = sample;
-      return {
-        x: from.x + (player.x - from.x) * fraction,
-        y: from.y + (player.y - from.y) * fraction,
-        z: from.z + (player.z - from.z) * fraction,
-      };
+    remotePose(player: MatchPlayer, now: number) {
+      if (latest) return sampleRemotePose(latest, previous, player, now - receivedAt);
     },
     send(input: MoveInput) {
       const message: PlayerInput = { ...input, seq: sequence++ };
       room.send(MATCH_INPUT, message);
       return message;
     },
-    fire(yaw: number, pitch: number) {
+    fire(yaw: number, pitch: number, renderedTick?: number) {
       if (!latest) return;
-      const target = latest.players.find((player) => player.id !== room.sessionId && player.alive);
-      const sample = target && interpolate(target, performance.now());
-      room.send(MATCH_FIRE, { yaw, pitch, viewTick: sample?.tick ?? latest.tick });
+      room.send(MATCH_FIRE, { yaw, pitch, viewTick: renderedTick ?? latest.tick });
     },
     reload() {
       room.send(MATCH_RELOAD);

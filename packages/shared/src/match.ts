@@ -6,7 +6,8 @@ export const MATCH_SNAPSHOT = "snapshot";
 export const MATCH_FIRE = "fire";
 export const MATCH_SHOT = "shot";
 export const MATCH_RELOAD = "reload";
-export const HIT_REWIND_TICKS = 12;
+// 300 ms at 60 Hz covers a 180 ms round trip plus snapshot and interpolation delay.
+export const HIT_REWIND_TICKS = 18;
 export const SIDEARM = { damage: 25, capacity: 8, interval: 15, reloadTicks: 84, range: 30 } as const;
 
 export function parseAim(value: unknown) {
@@ -42,6 +43,7 @@ export interface MatchPlayer extends MovementState {
   lastAppliedInputSeq: number;
   eyeHeight: number;
   spawnTick: number;
+  stanceChangedTick: number;
   health: number;
   alive: boolean;
   ammo: number;

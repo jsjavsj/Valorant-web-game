@@ -270,7 +270,8 @@ test("a delayed shot can hit the historical capsule, but stale and future ticks 
   shooter.onMessage("snapshot", (snapshot: Snapshot) => {
     latest = snapshot;
     if (profiling) cadence.push({ tick: snapshot.tick, time: performance.now() });
-    if (!anchor || shotSent) return;
+    // 180 ms RTT plus one snapshot interval exceeds the former 12-tick window.
+    if (!anchor || shotSent || snapshot.tick - anchor.tick < 15) return;
     const before = player(anchor, target.sessionId);
     const after = player(snapshot, target.sessionId);
     if (!before || !after || after.z - before.z <= 0.37) return;
@@ -287,7 +288,7 @@ test("a delayed shot can hit the historical capsule, but stale and future ticks 
     await expect.poll(() => latest!.tick).toBeGreaterThan(anchor!.tick + 24);
 
     const rejectTick = latest!.tick;
-    fire(anchor!.tick);
+    fire(anchor!.tick + 1);
     fire(rejectTick + 120);
     await expect.poll(() => latest!.tick).toBeGreaterThan(rejectTick + 3);
     expect(ammo()).toBe(7);

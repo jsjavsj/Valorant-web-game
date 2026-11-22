@@ -83,6 +83,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   }
 
   let nextLocalShot = 0;
+  let renderedTarget: { room: MatchConnection; tick: number } | undefined;
   function onFire(event: MouseEvent) {
     if (event.button !== 0 || !locked()) return;
     const room = getRoom();
@@ -91,7 +92,8 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     const now = performance.now();
     if (now < nextLocalShot) return;
     nextLocalShot = now + SIDEARM.interval * MOVEMENT_STEP * 1000;
-    room.fire(Math.atan2(Math.sin(yaw), Math.cos(yaw)), pitch);
+    const viewTick = renderedTarget?.room === room ? renderedTarget.tick : undefined;
+    room.fire(Math.atan2(Math.sin(yaw), Math.cos(yaw)), pitch, viewTick);
   }
   canvas.addEventListener("mousedown", onFire);
   canvas.addEventListener("click", requestLock);
@@ -188,8 +190,12 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
       }
     }
     const now = performance.now();
+    renderedTarget = undefined;
     for (const player of remote) {
-      const height = player.crouched ? PLAYER_CAPSULE.crouched : PLAYER_CAPSULE.standing;
+      const pose = room?.remotePose(player, now);
+      if (room && pose) renderedTarget = { room, tick: pose.tick };
+      const { x, y, z, crouched } = pose ?? player;
+      const height = crouched ? PLAYER_CAPSULE.crouched : PLAYER_CAPSULE.standing;
       let avatar = avatars.get(player.id);
       if (avatar?.height !== height) {
         avatar?.mesh.dispose();
@@ -200,7 +206,6 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
         avatar = { mesh, height };
         avatars.set(player.id, avatar);
       }
-      const { x, y, z } = room?.remotePosition(player, now) ?? player;
       avatar.mesh.position.set(x, y + height / 2, z);
     }
     canvas.dataset.roomId = room?.id ?? "";
