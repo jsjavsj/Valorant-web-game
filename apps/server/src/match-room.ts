@@ -49,8 +49,8 @@ export class MatchRoom extends Room {
   }
 
   onAuth(_client: Client, options: { code?: unknown }) {
-    if (!this.privateParty || !this.host) return true;
-    if (this.started || this.expired || this.settings.bot || options?.code !== this.roomId) {
+    if (!this.privateParty) return true;
+    if (this.started || this.expired || this.settings.bot || (this.host && options?.code !== this.roomId)) {
       throw new ServerError(4000, "This party is closed, full, or the code has expired.");
     }
     return true;
@@ -190,7 +190,7 @@ export class MatchRoom extends Room {
   onJoin(client: Client) {
     const amberTaken = [...this.players.values()].some((player) => player.team === "amber");
     const team = amberTaken ? "teal" : "amber";
-    if (this.privateParty && this.host && (this.started || this.expired || this.settings.bot)) {
+    if (this.privateParty && (this.started || this.expired || this.settings.bot)) {
       throw new ServerError(4000, "This party is no longer accepting guests.");
     }
     this.spawnPlayer(client.sessionId, team);
