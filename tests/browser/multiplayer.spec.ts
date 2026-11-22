@@ -6,6 +6,30 @@ test("two browsers share server positions and a departing player is removed", as
   const left = await browser.newPage();
   const right = await browser.newPage();
   const sent: (string | Buffer)[] = [];
+  let releaseMovement: (() => void) | undefined;
+  const movementGate = new Promise<void>((resolve) => { releaseMovement = resolve; });
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  let deliveryTime = 0;
+  let frameNumber = 0;
+  await left.routeWebSocket(/:2567\//, (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => {
+      if (!Buffer.isBuffer(message) || !message.includes("input")) {
+        server.send(message);
+        return;
+      }
+      void movementGate.then(() => {
+        if (left.isClosed()) return;
+        const now = Date.now();
+        deliveryTime = Math.max(deliveryTime + 1, now + 70 + (frameNumber++ % 3) * 15);
+        const timer = setTimeout(() => {
+          timers.delete(timer);
+          if (!left.isClosed()) server.send(message);
+        }, deliveryTime - now);
+        timers.add(timer);
+      });
+    });
+  });
   left.on("websocket", (socket) => socket.on("framesent", ({ payload }) => sent.push(payload)));
   try {
     await left.addInitScript(() => {
@@ -37,7 +61,16 @@ test("two browsers share server positions and a departing player is removed", as
     await left.mouse.down();
     await left.mouse.up();
     await expect.poll(() => left.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
+    const localZ = Number((await first.getAttribute("data-player-position"))!.split(",")[2]);
     await left.keyboard.down("w");
+    await expect.poll(async () => {
+      const position = await first.getAttribute("data-player-position");
+      return localZ - Number(position?.split(",")[2]);
+    }).toBeGreaterThan(0.08);
+    const [unmovedX, , unmovedZ] = await readRemotePosition();
+    expect(Math.hypot(unmovedX - x, unmovedZ - z)).toBeLessThan(0.01);
+    releaseMovement?.();
+    await expect(first).toHaveAttribute("data-prediction-error", /^\d+\.\d+$/);
     await expect.poll(async () => {
       const [nowX, , nowZ] = await readRemotePosition();
       return Math.hypot(nowX - x, nowZ - z);
@@ -59,6 +92,8 @@ test("two browsers share server positions and a departing player is removed", as
     await expect(second).toHaveAttribute("data-remote-position", "");
   } finally {
     await Promise.all([left.close(), right.close()]);
+    releaseMovement?.();
+    for (const timer of timers) clearTimeout(timer);
   }
 });
 
@@ -158,7 +193,7 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
 
     const start = left.find((p) => p.id === shooter.sessionId)!;
     const end = targetState()!;
-    shooter.send("fire", { yaw: Math.atan2(end.x - start.x, start.z - end.z), pitch: -0.16 });
+    shooter.send("fire", { yaw: Math.atan2(end.x - start.x, start.z - end.z), pitch: -0.16, viewTick: tick });
     await expect.poll(() => [ammo(left), ammo(right), health(left), health(right)])
       .toEqual([4, 4, 100, 100]);
   } finally {
@@ -187,4 +222,53 @@ test("rapid clicks produce feedback only for a confirmed shot", async ({ page })
   });
   await expect(page.getByText("Practice sidearm: 7 rounds")).toBeVisible();
   await expect(arena).toHaveAttribute("data-test-flashes", "1");
+});
+
+test("a delayed shot can hit the historical capsule, but stale and future ticks are rejected", async () => {
+  const requireClient = createRequire(new URL("../../apps/client/package.json", import.meta.url));
+  const { Client } = requireClient("@colyseus/sdk") as typeof import("../../apps/client/node_modules/@colyseus/sdk");
+  const client = new Client("http://127.0.0.1:2567");
+  const shooter = await client.create("prototype");
+  const target = await client.joinById(shooter.roomId);
+  type Snapshot = { tick: number; players: { id: string; x: number; z: number; health: number; ammo: number }[] };
+  let latest: Snapshot | undefined;
+  let anchor: Snapshot | undefined;
+  let shotSent = false;
+  const player = (snapshot: Snapshot | undefined, id: string) => snapshot?.players.find((entry) => entry.id === id);
+  const ammo = () => player(latest, shooter.sessionId)?.ammo;
+  const health = () => player(latest, target.sessionId)?.health;
+  const fire = (viewTick: number) => shooter.send("fire", { yaw: Math.PI / 2, pitch: -0.12, viewTick });
+  shooter.onMessage("shot", () => {});
+  target.onMessage("snapshot", () => {});
+  shooter.onMessage("snapshot", (snapshot: Snapshot) => {
+    latest = snapshot;
+    if (!anchor || shotSent) return;
+    const before = player(anchor, target.sessionId);
+    const after = player(snapshot, target.sessionId);
+    if (!before || !after || after.z - before.z <= 0.37) return;
+    shotSent = true;
+    fire(anchor.tick);
+  });
+  try {
+    await expect.poll(health).toBe(100);
+    anchor = latest;
+    target.send("input", { seq: 0, forward: -1, strafe: 0, yaw: 0, run: true, crouch: false, jump: false });
+    await expect.poll(health).toBe(75);
+    expect(ammo()).toBe(7);
+    target.send("stop", 1);
+    await expect.poll(() => latest!.tick).toBeGreaterThan(anchor!.tick + 24);
+
+    const rejectTick = latest!.tick;
+    fire(anchor!.tick);
+    fire(rejectTick + 120);
+    await expect.poll(() => latest!.tick).toBeGreaterThan(rejectTick + 3);
+    expect(ammo()).toBe(7);
+    expect(health()).toBe(75);
+
+    fire(latest!.tick);
+    await expect.poll(ammo).toBe(6);
+    expect(health()).toBe(75);
+  } finally {
+    await Promise.all([shooter.leave(), target.leave()]);
+  }
 });

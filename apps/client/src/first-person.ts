@@ -6,8 +6,11 @@ import { CreateCapsule } from "@babylonjs/core/Meshes/Builders/capsuleBuilder";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import type { MatchConnection } from "./multiplayer";
+import type { MatchPlayer, PlayerInput } from "@pumpworks/shared";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP, PLAYER_CAPSULE, RESET_PAD, SIDEARM } from "@pumpworks/shared";
+
+const MAX_PENDING_INPUTS = 30;
 
 const CONTROL_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Space",
@@ -120,8 +123,43 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   teamMaterials.amber.diffuseColor = teamColors.amber;
   teamMaterials.teal.diffuseColor = teamColors.teal;
 
+  let activeRoom: MatchConnection | null = null;
+  let offlineState = movement.state;
+  let appliedSnapshot: MatchPlayer | undefined;
+  let pending: PlayerInput[] = [];
+  let discardedThrough = -1;
   const update = (seconds: number) => {
     const room = getRoom();
+    if (room !== activeRoom) {
+      if (!activeRoom) offlineState = movement.state;
+      movement.restore(offlineState);
+      world.step();
+      activeRoom = room;
+      appliedSnapshot = undefined;
+      pending = [];
+      discardedThrough = -1;
+    }
+    const snapshot = room?.snapshot;
+    const players = snapshot?.players ?? [];
+    const self = players.find((player) => player.id === room?.sessionId);
+    const predicting = self?.alive && (!snapshot?.party || snapshot.party.started);
+    if (!predicting) pending = [];
+    if (self && self !== appliedSnapshot) {
+      const before = movement.feet;
+      if (!appliedSnapshot?.alive || appliedSnapshot.spawnTick !== self.spawnTick) pending = [];
+      pending = pending.filter((input) => input.seq > self.lastAppliedInputSeq);
+      movement.restore(self);
+      world.step();
+      if (predicting && self.lastAppliedInputSeq >= discardedThrough) {
+        for (const input of pending) {
+          movement.step(input);
+          world.step();
+        }
+      }
+      const after = movement.feet;
+      canvas.dataset.predictionError = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z).toFixed(4);
+      appliedSnapshot = self;
+    }
     marker.setEnabled(Boolean(room));
     clock.advance(seconds, () => {
       const input = {
@@ -133,14 +171,15 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
         jump,
       };
       jump = false;
-      if (room) room.send(input);
-      else {
-        movement.step(input);
-        world.step();
+      if (room) {
+        if (!predicting || !self) return;
+        pending.push(room.send(input));
+        if (pending.length > MAX_PENDING_INPUTS) discardedThrough = pending.shift()!.seq;
+        if (self.lastAppliedInputSeq < discardedThrough) return;
       }
+      movement.step(input);
+      world.step();
     });
-    const players = room?.snapshot?.players ?? [];
-    const self = players.find((player) => player.id === room?.sessionId);
     const remote = players.filter((player) => player.id !== room?.sessionId && player.alive);
     for (const [id, { mesh }] of avatars) {
       if (!remote.some((player) => player.id === id)) {
@@ -165,8 +204,8 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
       avatar.mesh.position.set(x, y + height / 2, z);
     }
     canvas.dataset.roomId = room?.id ?? "";
-    const { x, y, z } = self ?? movement.feet;
-    camera.position.set(x, y + (self?.eyeHeight ?? movement.eyeHeight), z);
+    const { x, y, z } = movement.feet;
+    camera.position.set(x, y + movement.eyeHeight, z);
     const aim = new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     camera.setTarget(camera.position.add(aim));
     canvas.dataset.playerPosition = [x, y, z].map((value) => value.toFixed(3)).join(",");

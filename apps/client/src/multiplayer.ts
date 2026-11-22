@@ -25,6 +25,19 @@ export async function connectMatch(mode: MatchMode, onSnapshot: (snapshot: Match
     latest = snapshot;
     onSnapshot(snapshot, room.sessionId);
   });
+  const interpolationFraction = (ticks: number, now: number) =>
+    Math.min(1, Math.max(0, (now - receivedAt) / (ticks * MOVEMENT_STEP * 1000)));
+
+  function interpolate(player: MatchPlayer, now: number) {
+    if (!previous || !latest || previous.party?.started !== latest.party?.started) return;
+    const ticks = latest.tick - previous.tick;
+    // Snap after a longer interruption, a respawn, or a party start.
+    if (ticks <= 0 || ticks > 6) return;
+    const from = previous.players.find((entry) => entry.id === player.id);
+    if (!from?.alive || from.spawnTick !== player.spawnTick || from.team !== player.team) return;
+    const fraction = interpolationFraction(ticks, now);
+    return { from, fraction, tick: previous.tick + Math.round(ticks * fraction) };
+  }
   room.onMessage(MATCH_SHOT, onShot);
   room.onLeave(onLeave);
   return {
@@ -32,13 +45,9 @@ export async function connectMatch(mode: MatchMode, onSnapshot: (snapshot: Match
     sessionId: room.sessionId,
     get snapshot() { return latest; },
     remotePosition(player: MatchPlayer, now: number) {
-      if (!previous || !latest || previous.party?.started !== latest.party?.started) return player;
-      const ticks = latest.tick - previous.tick;
-      // Snap after a longer interruption or a respawn rather than sliding through the level.
-      if (ticks <= 0 || ticks > 6) return player;
-      const from = previous.players.find((entry) => entry.id === player.id);
-      if (!from?.alive || from.team !== player.team) return player;
-      const fraction = Math.min(1, Math.max(0, (now - receivedAt) / (ticks * MOVEMENT_STEP * 1000)));
+      const sample = interpolate(player, now);
+      if (!sample) return player;
+      const { from, fraction } = sample;
       return {
         x: from.x + (player.x - from.x) * fraction,
         y: from.y + (player.y - from.y) * fraction,
@@ -48,9 +57,13 @@ export async function connectMatch(mode: MatchMode, onSnapshot: (snapshot: Match
     send(input: MoveInput) {
       const message: PlayerInput = { ...input, seq: sequence++ };
       room.send(MATCH_INPUT, message);
+      return message;
     },
     fire(yaw: number, pitch: number) {
-      room.send(MATCH_FIRE, { yaw, pitch });
+      if (!latest) return;
+      const target = latest.players.find((player) => player.id !== room.sessionId && player.alive);
+      const sample = target && interpolate(target, performance.now());
+      room.send(MATCH_FIRE, { yaw, pitch, viewTick: sample?.tick ?? latest.tick });
     },
     reload() {
       room.send(MATCH_RELOAD);

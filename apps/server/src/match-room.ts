@@ -3,13 +3,14 @@ import { Room, ServerError } from "@colyseus/core";
 import type { Client } from "@colyseus/core";
 import {
   addArenaColliders, ARENA_SPAWN, CharacterMovement, IDLE_MOVE, isOnResetPad, MATCH_INPUT,
-  PARTY_BOT, PARTY_READY, PARTY_SETTINGS, PARTY_START,
-  MATCH_FIRE, MATCH_SHOT, MATCH_RELOAD, MATCH_SNAPSHOT, MATCH_STOP, parseAim, SIDEARM, MovementClock, MOVEMENT_STEP, parsePlayerInput, PLAYER_HEALTH, RAPIER,
+  HIT_REWIND_TICKS, PLAYER_CAPSULE, PARTY_BOT, PARTY_READY, PARTY_SETTINGS, PARTY_START,
+  MATCH_FIRE, MATCH_SHOT, MATCH_RELOAD, MATCH_SNAPSHOT, MATCH_STOP, parseShot, SIDEARM, MovementClock, MOVEMENT_STEP, parsePlayerInput, PLAYER_HEALTH, RAPIER,
 } from "@pumpworks/shared";
 import type { MatchPlayer, MatchSnapshot, MoveInput, PartySettings } from "@pumpworks/shared";
 
 const activePartyCodes = new Set<string>();
 
+type MatchPlayerPosition = Pick<MatchPlayer, "x" | "y" | "z">;
 type Team = MatchPlayer["team"];
 type Colliders = ReturnType<typeof import("@pumpworks/shared").parseAssetLayout>["colliders"];
 
@@ -26,6 +27,8 @@ interface Player {
   lastInputTick: number;
   respawnTick: number;
   lastPosition: { x: number; y: number; z: number };
+  spawnTick: number;
+  lastShotViewTick: number;
 }
 
 export class MatchRoom extends Room {
@@ -34,6 +37,7 @@ export class MatchRoom extends Room {
   private world!: InstanceType<typeof RAPIER.World>;
   private readonly players = new Map<string, Player>();
   private tick = 0;
+  private readonly hitHistory = new Map<number, { player: Player; movement: CharacterMovement; center: MatchPlayerPosition; height: number }[]>();
   protected readonly privateParty: boolean = false;
   private inviteUntil = 0;
   private host = "";
@@ -136,19 +140,23 @@ export class MatchRoom extends Room {
 
     this.onMessage<unknown>(MATCH_FIRE, (client, payload) => {
       const shooter = this.players.get(client.sessionId);
-      const direction = parseAim(payload);
-      if (!this.playing || !shooter || !direction || shooter.respawnTick || shooter.reloadTick ||
+      const aim = parseShot(payload);
+      if (!this.playing || !shooter || !aim || shooter.respawnTick || shooter.reloadTick ||
           shooter.ammo <= 0 || this.tick < shooter.nextShotTick) return;
+      const { direction, viewTick } = aim;
+      if (viewTick !== undefined && (viewTick <= shooter.lastShotViewTick || viewTick < shooter.spawnTick ||
+          viewTick < this.tick - HIT_REWIND_TICKS || viewTick > this.tick || !this.hitHistory.has(viewTick))) return;
 
       shooter.ammo--;
+      if (viewTick !== undefined) shooter.lastShotViewTick = viewTick;
       client.send(MATCH_SHOT);
       shooter.nextShotTick = this.tick + SIDEARM.interval;
-      const hit = shooter.movement.firstHit(direction, SIDEARM.range);
-      for (const target of this.players.values()) {
-        if (target === shooter || target.respawnTick || target.movement.colliderHandle !== hit) continue;
+      const target = viewTick === undefined
+        ? this.currentTarget(shooter, direction)
+        : this.historicalTarget(shooter, direction, viewTick);
+      if (target) {
         target.health = Math.max(0, target.health - SIDEARM.damage);
         if (!target.health) this.knockOut(target, target.movement.feet);
-        break;
       }
     });
 
@@ -170,6 +178,7 @@ export class MatchRoom extends Room {
             if (!spawn) continue;
             player.movement = new CharacterMovement(this.world, spawn);
             player.respawnTick = 0;
+            player.spawnTick = this.tick + 1;
             player.health = PLAYER_HEALTH;
             player.ammo = SIDEARM.capacity;
             player.nextShotTick = this.tick;
@@ -192,6 +201,7 @@ export class MatchRoom extends Room {
       }
       this.world.step();
       this.tick++;
+      if (this.playing) this.recordHitboxes();
       if (this.tick % 3 === 0) this.sendSnapshot();
     }), MOVEMENT_STEP * 1000);
   }
@@ -213,6 +223,7 @@ export class MatchRoom extends Room {
       team, health: PLAYER_HEALTH, ammo: SIDEARM.capacity, nextShotTick: this.tick, reloadTick: 0,
       movement: new CharacterMovement(this.world, spawn),
       input: IDLE_MOVE, lastSeq: -1, lastAppliedInputSeq: -1, lastInputTick: this.tick, respawnTick: 0, lastPosition: spawn,
+      spawnTick: this.tick, lastShotViewTick: -1,
     });
   }
 
@@ -251,10 +262,49 @@ export class MatchRoom extends Room {
     player.input = IDLE_MOVE;
   }
 
+  private recordHitboxes() {
+    this.hitHistory.delete(this.tick - HIT_REWIND_TICKS - 1);
+    this.hitHistory.set(this.tick, [...this.players.values()].filter((player) => !player.respawnTick).map((player) => {
+      const movement = player.movement;
+      const height = movement.crouched ? PLAYER_CAPSULE.crouched : PLAYER_CAPSULE.standing;
+      const feet = movement.feet;
+      return { player, movement, center: { ...feet, y: feet.y + height / 2 }, height };
+    }));
+  }
+
+  private currentTarget(shooter: Player, direction: MatchPlayerPosition) {
+    const hit = shooter.movement.firstHit(direction, SIDEARM.range);
+    return [...this.players.values()].find((target) =>
+      target !== shooter && !target.respawnTick && target.movement.colliderHandle === hit);
+  }
+
+  private historicalTarget(shooter: Player, direction: MatchPlayerPosition, viewTick: number) {
+    const feet = shooter.movement.feet;
+    const ray = new RAPIER.Ray({ ...feet, y: feet.y + shooter.movement.eyeHeight }, direction);
+    const livePlayers = new Set([...this.players.values()].filter((player) => !player.respawnTick));
+    const handles = new Set([...livePlayers].map((player) => player.movement.colliderHandle));
+    const wall = this.world.castRay(ray, SIDEARM.range, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      undefined, undefined, undefined, (collider) => !handles.has(collider.handle));
+    let nearest = wall?.timeOfImpact ?? SIDEARM.range;
+    let target: Player | undefined;
+    for (const { player, movement, center, height } of this.hitHistory.get(viewTick) ?? []) {
+      if (player === shooter || !livePlayers.has(player) || player.movement !== movement) continue;
+      const radius = PLAYER_CAPSULE.radius;
+      const capsule = new RAPIER.Capsule(height / 2 - radius, radius);
+      const distance = capsule.castRay(ray, center, { x: 0, y: 0, z: 0, w: 1 }, nearest, true);
+      if (distance >= 0 && distance < nearest) {
+        nearest = distance;
+        target = player;
+      }
+    }
+    return target;
+  }
+
   private sendSnapshot() {
-    const players = [...this.players].map(([id, { team, movement, respawnTick, lastPosition, health, ammo, reloadTick, lastAppliedInputSeq }]): MatchPlayer => ({
-      id, team, lastAppliedInputSeq, ...(respawnTick ? lastPosition : movement.feet),
-      eyeHeight: movement.eyeHeight, crouched: movement.crouched,
+    const players = [...this.players].map(([id, { team, movement, respawnTick, lastPosition, health, ammo, reloadTick, lastAppliedInputSeq, spawnTick }]): MatchPlayer => ({
+      id, team, lastAppliedInputSeq, spawnTick,
+      ...(respawnTick ? { ...lastPosition, crouched: movement.crouched, grounded: false, verticalSpeed: 0 } : movement.state),
+      eyeHeight: movement.eyeHeight,
       health, ammo, reloading: reloadTick !== 0, alive: respawnTick === 0,
     }));
     const snapshot: MatchSnapshot = { tick: this.tick, players };
