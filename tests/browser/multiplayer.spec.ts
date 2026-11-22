@@ -24,11 +24,14 @@ test("two browsers share server positions and a departing player is removed", as
           send.call(this, data);
           return;
         }
+        // The SDK reuses its encoding buffer after send returns.
+        const frame = new Uint8Array(bytes.byteLength);
+        frame.set(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
         const deliver = () => {
           const now = performance.now();
           deliveryTime = Math.max(deliveryTime + 1, now + 70 + (frameNumber++ % 3) * 15);
           setTimeout(() => {
-            if (this.readyState === WebSocket.OPEN) send.call(this, data);
+            if (this.readyState === WebSocket.OPEN) send.call(this, frame);
           }, deliveryTime - now);
         };
         if (mode === "hold") held.push(deliver);
