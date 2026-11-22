@@ -22,6 +22,7 @@ interface Player {
   movement: CharacterMovement;
   input: MoveInput;
   lastSeq: number;
+  lastAppliedInputSeq: number;
   lastInputTick: number;
   respawnTick: number;
   lastPosition: { x: number; y: number; z: number };
@@ -182,6 +183,7 @@ export class MatchRoom extends Room {
         }
         if (this.tick - player.lastInputTick >= 15) player.input = IDLE_MOVE;
         player.movement.step(player.input);
+        player.lastAppliedInputSeq = player.lastSeq;
         const feet = player.movement.feet;
         if (isOnResetPad(feet) || feet.y < -5) {
           this.knockOut(player, feet);
@@ -210,7 +212,7 @@ export class MatchRoom extends Room {
     this.players.set(id, {
       team, health: PLAYER_HEALTH, ammo: SIDEARM.capacity, nextShotTick: this.tick, reloadTick: 0,
       movement: new CharacterMovement(this.world, spawn),
-      input: IDLE_MOVE, lastSeq: -1, lastInputTick: this.tick, respawnTick: 0, lastPosition: spawn,
+      input: IDLE_MOVE, lastSeq: -1, lastAppliedInputSeq: -1, lastInputTick: this.tick, respawnTick: 0, lastPosition: spawn,
     });
   }
 
@@ -250,8 +252,8 @@ export class MatchRoom extends Room {
   }
 
   private sendSnapshot() {
-    const players = [...this.players].map(([id, { team, movement, respawnTick, lastPosition, health, ammo, reloadTick }]): MatchPlayer => ({
-      id, team, ...(respawnTick ? lastPosition : movement.feet),
+    const players = [...this.players].map(([id, { team, movement, respawnTick, lastPosition, health, ammo, reloadTick, lastAppliedInputSeq }]): MatchPlayer => ({
+      id, team, lastAppliedInputSeq, ...(respawnTick ? lastPosition : movement.feet),
       eyeHeight: movement.eyeHeight, crouched: movement.crouched,
       health, ammo, reloading: reloadTick !== 0, alive: respawnTick === 0,
     }));

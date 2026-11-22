@@ -148,6 +148,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
         avatars.delete(id);
       }
     }
+    const now = performance.now();
     for (const player of remote) {
       const height = player.crouched ? PLAYER_CAPSULE.crouched : PLAYER_CAPSULE.standing;
       let avatar = avatars.get(player.id);
@@ -160,7 +161,8 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
         avatar = { mesh, height };
         avatars.set(player.id, avatar);
       }
-      avatar.mesh.position.set(player.x, player.y + height / 2, player.z);
+      const { x, y, z } = room?.remotePosition(player, now) ?? player;
+      avatar.mesh.position.set(x, y + height / 2, z);
     }
     canvas.dataset.roomId = room?.id ?? "";
     const { x, y, z } = self ?? movement.feet;

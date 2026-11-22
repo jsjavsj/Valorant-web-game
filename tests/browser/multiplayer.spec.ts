@@ -67,7 +67,7 @@ test("the server synchronizes a reset pad knockout and respawn", async () => {
   const { Client } = requireClient("@colyseus/sdk") as typeof import("../../apps/client/node_modules/@colyseus/sdk");
   const client = new Client("http://127.0.0.1:2567");
   const amber = await client.create("prototype");
-  type Snapshot = { players: { id: string; health: number; alive: boolean }[] };
+  type Snapshot = { players: { id: string; health: number; alive: boolean; lastAppliedInputSeq: number }[] };
   let observer: Snapshot | undefined;
   amber.onMessage("snapshot", (value: Snapshot) => { observer = value; });
   const teal = await client.joinById(amber.roomId);
@@ -78,7 +78,13 @@ test("the server synchronizes a reset pad knockout and respawn", async () => {
   let timer: ReturnType<typeof setInterval> | undefined;
   try {
     await expect.poll(() => read()?.health).toBe(100);
-    let seq = 0;
+    expect(self()?.lastAppliedInputSeq ?? -1).toBe(-1);
+    teal.send("input", { seq: 0, forward: 0, strafe: 0, yaw: 0, run: false, crouch: false, jump: false });
+    await expect.poll(() => self()?.lastAppliedInputSeq).toBe(0);
+    teal.send("stop", 1);
+    await expect.poll(() => self()?.lastAppliedInputSeq).toBe(1);
+
+    let seq = 2;
     timer = setInterval(() => {
       teal.send("input", { seq: seq++, forward: 1, strafe: 0, yaw: 0, run: false, crouch: false, jump: false });
     }, 30);

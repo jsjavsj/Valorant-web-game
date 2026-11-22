@@ -1,6 +1,6 @@
 import { Client } from "@colyseus/sdk";
-import { MATCH_FIRE, MATCH_INPUT, MATCH_RELOAD, MATCH_SHOT, MATCH_SNAPSHOT, MATCH_STOP, PARTY_READY, PARTY_SETTINGS, PARTY_START, PARTY_TYPE, ROOM_TYPE } from "@pumpworks/shared";
-import type { MatchSnapshot, MoveInput, PartySettings, PlayerInput } from "@pumpworks/shared";
+import { MATCH_FIRE, MATCH_INPUT, MATCH_RELOAD, MATCH_SHOT, MATCH_SNAPSHOT, MATCH_STOP, MOVEMENT_STEP, PARTY_READY, PARTY_SETTINGS, PARTY_START, PARTY_TYPE, ROOM_TYPE } from "@pumpworks/shared";
+import type { MatchPlayer, MatchSnapshot, MoveInput, PartySettings, PlayerInput } from "@pumpworks/shared";
 
 export type MatchMode = { kind: "quick" } | { kind: "create" } | { kind: "invite"; code: string };
 
@@ -13,11 +13,15 @@ export async function connectMatch(mode: MatchMode, onSnapshot: (snapshot: Match
     await client.joinOrCreate(ROOM_TYPE);
 
   let sequence = 0;
-  let lastTick = -1;
+  let previous: MatchSnapshot | undefined;
   let latest: MatchSnapshot | undefined;
+  let receivedAt = 0;
   room.onMessage(MATCH_SNAPSHOT, (snapshot: MatchSnapshot) => {
-    if (snapshot.tick < lastTick) return;
-    lastTick = snapshot.tick;
+    if (latest && snapshot.tick < latest.tick) return;
+    if (!latest || snapshot.tick > latest.tick) {
+      previous = latest;
+      receivedAt = performance.now();
+    }
     latest = snapshot;
     onSnapshot(snapshot, room.sessionId);
   });
@@ -27,6 +31,20 @@ export async function connectMatch(mode: MatchMode, onSnapshot: (snapshot: Match
     id: room.roomId,
     sessionId: room.sessionId,
     get snapshot() { return latest; },
+    remotePosition(player: MatchPlayer, now: number) {
+      if (!previous || !latest || previous.party?.started !== latest.party?.started) return player;
+      const ticks = latest.tick - previous.tick;
+      // Snap after a longer interruption or a respawn rather than sliding through the level.
+      if (ticks <= 0 || ticks > 6) return player;
+      const from = previous.players.find((entry) => entry.id === player.id);
+      if (!from?.alive || from.team !== player.team) return player;
+      const fraction = Math.min(1, Math.max(0, (now - receivedAt) / (ticks * MOVEMENT_STEP * 1000)));
+      return {
+        x: from.x + (player.x - from.x) * fraction,
+        y: from.y + (player.y - from.y) * fraction,
+        z: from.z + (player.z - from.z) * fraction,
+      };
+    },
     send(input: MoveInput) {
       const message: PlayerInput = { ...input, seq: sequence++ };
       room.send(MATCH_INPUT, message);

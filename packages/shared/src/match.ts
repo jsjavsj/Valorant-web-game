@@ -28,6 +28,7 @@ export interface PlayerInput extends MoveInput {
 export interface MatchPlayer {
   id: string;
   team: "amber" | "teal";
+  lastAppliedInputSeq: number;
   x: number;
   y: number;
   z: number;
