@@ -10,31 +10,44 @@ import type { MatchPlayer, PlayerInput } from "@pumpworks/shared";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { addArenaColliders, ARENA_BOXES, CharacterMovement, MovementClock, MOVEMENT_STEP, PLAYER_CAPSULE, RESET_PAD, SIDEARM } from "@pumpworks/shared";
 
+import { PUMPWORKS_BLOCKOUT } from "@pumpworks/shared";
+import { buildCourtyard } from "./courtyard";
+
 const MAX_PENDING_INPUTS = 30;
 
 const CONTROL_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Space",
 ]);
 
-export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTMLCanvasElement, getRoom: () => MatchConnection | null) {
-  addArenaColliders(world);
-  const masonry = new StandardMaterial("masonry", scene);
-  masonry.diffuseColor = new Color3(0.24, 0.34, 0.38);
-  const obstacles = new StandardMaterial("obstacles", scene);
-  obstacles.diffuseColor = new Color3(0.62, 0.40, 0.18);
-  for (const box of ARENA_BOXES) {
-    const [width, height, depth] = box.size;
-    const mesh = CreateBox(box.name, { width, height, depth }, scene);
-    const [x, y, z] = box.center;
-    mesh.position.set(x, y, z);
-    mesh.rotation.x = "pitch" in box ? box.pitch : 0;
-    mesh.material = box.name === "floor" || box.name.endsWith("wall") ? masonry : obstacles;
+export function attachFirstPerson(
+  scene: Scene,
+  world: RAPIER.World,
+  canvas: HTMLCanvasElement,
+  getRoom: () => MatchConnection | null,
+  courtyard = false,
+) {
+  addArenaColliders(world, courtyard ? PUMPWORKS_BLOCKOUT.boxes : ARENA_BOXES);
+  if (courtyard) buildCourtyard(scene);
+  else {
+    const masonry = new StandardMaterial("masonry", scene);
+    masonry.diffuseColor = new Color3(0.24, 0.34, 0.38);
+    const obstacles = new StandardMaterial("obstacles", scene);
+    obstacles.diffuseColor = new Color3(0.62, 0.40, 0.18);
+    for (const box of ARENA_BOXES) {
+      const [width, height, depth] = box.size;
+      const mesh = CreateBox(box.name, { width, height, depth }, scene);
+      const [x, y, z] = box.center;
+      mesh.position.set(x, y, z);
+      mesh.rotation.x = "pitch" in box ? box.pitch : 0;
+      mesh.material = box.name === "floor" || box.name.endsWith("wall") ? masonry : obstacles;
+    }
   }
 
   const camera = new FreeCamera("first person", Vector3.Zero(), scene);
   camera.minZ = 0.05;
   scene.activeCamera = camera;
-  const movement = new CharacterMovement(world);
+  const movement = new CharacterMovement(world, courtyard ? PUMPWORKS_BLOCKOUT.spawns.attackers : undefined);
+  let overview = false;
   const clock = new MovementClock();
   world.timestep = MOVEMENT_STEP;
   world.step();
@@ -51,6 +64,7 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
   };
 
   function requestLock() {
+    if (overview) return;
     const party = getRoom()?.snapshot?.party;
     if (party && !party.started) return;
     try {
@@ -212,12 +226,22 @@ export function attachFirstPerson(scene: Scene, world: RAPIER.World, canvas: HTM
     const { x, y, z } = movement.feet;
     camera.position.set(x, y + movement.eyeHeight, z);
     const aim = new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
-    camera.setTarget(camera.position.add(aim));
+    if (overview) {
+      camera.position.set(20, 25, 25);
+      camera.setTarget(new Vector3(0, 0, -0.75));
+    } else {
+      camera.setTarget(camera.position.add(aim));
+    }
     canvas.dataset.playerPosition = [x, y, z].map((value) => value.toFixed(3)).join(",");
   };
   update(0);
   return {
     update,
+    setOverview(enabled: boolean) {
+      overview = enabled;
+      if (enabled && locked()) document.exitPointerLock();
+      clear();
+    },
     dispose() {
       canvas.removeEventListener("mousedown", onFire);
       canvas.removeEventListener("click", requestLock);
