@@ -10,6 +10,20 @@ test("two browsers can enter an invite-only party and start when both are ready"
     await host.getByRole("button", { name: "Create private party" }).click();
     const invite = host.getByLabel("Invite code");
     await expect(invite).toHaveText(/^[A-F0-9]{10}$/);
+    // Dispatch both changes in one browser task so neither handler can use a newer snapshot.
+    await host.getByRole("group", { name: "Host settings" }).evaluate((fieldset) => {
+      const team = fieldset.querySelector("select")!;
+      const bot = fieldset.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      team.value = "teal";
+      team.dispatchEvent(new Event("change", { bubbles: true }));
+      bot.click();
+    });
+    const trainingBot = host.getByLabel("Add stationary training bot");
+    await expect(trainingBot).toBeChecked();
+    await expect(host.getByText("Host: teal · Guest: amber")).toBeVisible();
+    await trainingBot.uncheck();
+    await expect(trainingBot).not.toBeChecked();
+
     await guest.goto("/");
     await guest.getByRole("textbox", { name: "Party code" }).fill(await invite.innerText());
     await guest.getByRole("button", { name: "Join by code" }).click();
@@ -17,7 +31,6 @@ test("two browsers can enter an invite-only party and start when both are ready"
     await expect(guest.getByRole("button", { name: "Start match" })).toHaveCount(0);
     const start = host.getByRole("button", { name: "Start match" });
     await expect(start).toBeDisabled();
-    await host.getByLabel("Host team").selectOption("teal");
     await expect(guest.getByText("Host: teal · Guest: amber")).toBeVisible();
     await host.getByRole("button", { name: "Ready", exact: true }).click();
     await guest.getByRole("button", { name: "Ready", exact: true }).click();
@@ -48,7 +61,7 @@ test("party authorization is based on the connected session, and the bot can fil
       guest.send("party-ready", true);
       await expect.poll(() => latest?.party.ready.length).toBe(2);
       const tick = latest!.tick;
-      guest.send("party-settings", { hostTeam: "teal", bot: false, allowDuplicateAgents: false });
+      guest.send("party-settings", { hostTeam: "teal" });
       guest.send("party-start");
       await expect.poll(() => latest?.tick ?? 0).toBeGreaterThan(tick + 12);
       expect(latest?.party.settings.hostTeam).toBe("amber");
@@ -57,7 +70,7 @@ test("party authorization is based on the connected session, and the bot can fil
       await guest.leave();
     }
     await expect.poll(() => latest?.players.length).toBe(1);
-    host.send("party-settings", { hostTeam: "amber", bot: true, allowDuplicateAgents: false });
+    host.send("party-settings", { bot: true });
     await expect.poll(() => latest?.party.settings.bot).toBe(true);
     host.send("party-ready", true);
     await expect.poll(() => latest?.party.ready.length).toBe(1);

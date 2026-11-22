@@ -41,7 +41,7 @@ export async function connectMatch(mode: MatchMode, onSnapshot: (snapshot: Match
       room.send(MATCH_STOP, sequence++);
     },
     ready(value: boolean) { room.send(PARTY_READY, value); },
-    configure(settings: PartySettings) { room.send(PARTY_SETTINGS, settings); },
+    configure(changes: Partial<PartySettings>) { room.send(PARTY_SETTINGS, changes); },
     start() { room.send(PARTY_START); },
     async leave() { await room.leave(); },
   };

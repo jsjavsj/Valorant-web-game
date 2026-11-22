@@ -70,10 +70,17 @@ export class MatchRoom extends Room {
       else this.ready.delete(client.sessionId);
     });
     this.onMessage<unknown>(PARTY_SETTINGS, (client, value) => {
-      if (this.started || this.expired || client.sessionId !== this.host || !value || typeof value !== "object") return;
-      const { hostTeam, bot, allowDuplicateAgents } = value as Record<string, unknown>;
+      if (this.started || this.expired || client.sessionId !== this.host ||
+          !value || typeof value !== "object" || Array.isArray(value)) return;
+      const {
+        hostTeam = this.settings.hostTeam,
+        bot = this.settings.bot,
+        allowDuplicateAgents = this.settings.allowDuplicateAgents,
+      } = value as Record<string, unknown>;
       if ((hostTeam !== "amber" && hostTeam !== "teal") || typeof bot !== "boolean" ||
           typeof allowDuplicateAgents !== "boolean" || (bot && this.players.size !== 1)) return;
+      if (hostTeam === this.settings.hostTeam && bot === this.settings.bot &&
+          allowDuplicateAgents === this.settings.allowDuplicateAgents) return;
       this.settings = { hostTeam, bot, allowDuplicateAgents };
       this.ready.clear();
     });

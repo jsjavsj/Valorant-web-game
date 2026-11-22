@@ -229,16 +229,16 @@ function App() {
           <legend>Host settings</legend>
           <label>Host team <select value={party.settings.hostTeam}
             onChange={(event) => network.current?.configure({
-              ...party.settings, hostTeam: event.target.value === "teal" ? "teal" : "amber",
+              hostTeam: event.target.value === "teal" ? "teal" : "amber",
             })}>
             <option value="amber">Amber</option>
             <option value="teal">Teal</option>
           </select></label>
           <label><input type="checkbox" checked={party.settings.bot} disabled={players > 1}
-            onChange={(event) => network.current?.configure({ ...party.settings, bot: event.target.checked })} />
+            onChange={(event) => network.current?.configure({ bot: event.target.checked })} />
             Add stationary training bot</label>
           <label><input type="checkbox" checked={party.settings.allowDuplicateAgents}
-            onChange={(event) => network.current?.configure({ ...party.settings, allowDuplicateAgents: event.target.checked })} />
+            onChange={(event) => network.current?.configure({ allowDuplicateAgents: event.target.checked })} />
             Allow duplicate agents</label>
           <button type="button" disabled={(!party.settings.bot && players !== 2) || party.ready.length !== players}
             onClick={() => network.current?.start()}>Start match</button>
