@@ -61,6 +61,13 @@ test("two browsers share server positions and a departing player is removed", as
     await left.mouse.down();
     await left.mouse.up();
     await expect.poll(() => left.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
+    await first.evaluate((canvas) => {
+      let maxCorrection = 0;
+      new MutationObserver(() => {
+        maxCorrection = Math.max(maxCorrection, Number(canvas.getAttribute("data-prediction-error")));
+        canvas.setAttribute("data-test-max-correction", String(maxCorrection));
+      }).observe(canvas, { attributes: true, attributeFilter: ["data-prediction-error"] });
+    });
     const localZ = Number((await first.getAttribute("data-player-position"))!.split(",")[2]);
     await left.keyboard.down("w");
     await expect.poll(async () => {
@@ -86,6 +93,13 @@ test("two browsers share server positions and a departing player is removed", as
     await left.keyboard.up("w");
     await left.evaluate(() => document.exitPointerLock());
     await expect.poll(() => left.evaluate(() => document.pointerLockElement === null)).toBe(true);
+    await left.evaluate(() => { delete document.documentElement.dataset.pauseFrames; });
+    await expect.poll(async () => {
+      const local = (await first.getAttribute("data-player-position"))?.split(",").map(Number) ?? [];
+      const remote = await readRemotePosition();
+      return Math.hypot(local[0] - remote[0], local[2] - remote[2]);
+    }).toBeLessThan(0.15);
+    console.log(`Prediction under 70–100 ms input jitter: max correction ${await first.getAttribute("data-test-max-correction")} m`);
 
     await left.getByRole("button", { name: "Leave match" }).click();
     await expect(right.getByText("1/2 players connected")).toBeVisible();
@@ -234,6 +248,8 @@ test("a delayed shot can hit the historical capsule, but stale and future ticks 
   let latest: Snapshot | undefined;
   let anchor: Snapshot | undefined;
   let shotSent = false;
+  const cadence: { tick: number; time: number }[] = [];
+  let profiling = false;
   const player = (snapshot: Snapshot | undefined, id: string) => snapshot?.players.find((entry) => entry.id === id);
   const ammo = () => player(latest, shooter.sessionId)?.ammo;
   const health = () => player(latest, target.sessionId)?.health;
@@ -242,6 +258,7 @@ test("a delayed shot can hit the historical capsule, but stale and future ticks 
   target.onMessage("snapshot", () => {});
   shooter.onMessage("snapshot", (snapshot: Snapshot) => {
     latest = snapshot;
+    if (profiling) cadence.push({ tick: snapshot.tick, time: performance.now() });
     if (!anchor || shotSent) return;
     const before = player(anchor, target.sessionId);
     const after = player(snapshot, target.sessionId);
@@ -268,6 +285,14 @@ test("a delayed shot can hit the historical capsule, but stale and future ticks 
     fire(latest!.tick);
     await expect.poll(ammo).toBe(6);
     expect(health()).toBe(75);
+
+    profiling = true;
+    await expect.poll(() => cadence.length).toBeGreaterThanOrEqual(21);
+    const first = cadence[0];
+    const last = cadence.at(-1)!;
+    const seconds = (last.time - first.time) / 1000;
+    expect(last.tick - first.tick).toBe((cadence.length - 1) * 3);
+    console.log(`Observed over ${seconds.toFixed(2)} s: ${((last.tick - first.tick) / seconds).toFixed(1)} simulation Hz, ${((cadence.length - 1) / seconds).toFixed(1)} snapshot Hz`);
   } finally {
     await Promise.all([shooter.leave(), target.leave()]);
   }

@@ -284,7 +284,7 @@ export class MatchRoom extends Room {
     const livePlayers = new Set([...this.players.values()].filter((player) => !player.respawnTick));
     const handles = new Set([...livePlayers].map((player) => player.movement.colliderHandle));
     const wall = this.world.castRay(ray, SIDEARM.range, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
-      undefined, undefined, undefined, (collider) => !handles.has(collider.handle));
+      undefined, undefined, undefined, (collider: { handle: number }) => !handles.has(collider.handle));
     let nearest = wall?.timeOfImpact ?? SIDEARM.range;
     let target: Player | undefined;
     for (const { player, movement, center, height } of this.hitHistory.get(viewTick) ?? []) {
