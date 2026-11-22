@@ -21,7 +21,7 @@ test("two browsers can enter an invite-only party and start when both are ready"
     const trainingBot = host.getByLabel("Add stationary training bot");
     await expect(trainingBot).toBeChecked();
     await expect(host.getByText("Host: teal · Guest: amber")).toBeVisible();
-    await trainingBot.uncheck();
+    await trainingBot.click();
     await expect(trainingBot).not.toBeChecked();
 
     await guest.goto("/");
