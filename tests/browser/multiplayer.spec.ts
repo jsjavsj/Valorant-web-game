@@ -6,33 +6,35 @@ test("two browsers share server positions and a departing player is removed", as
   const left = await browser.newPage();
   const right = await browser.newPage();
   const sent: (string | Buffer)[] = [];
-  let releaseMovement: (() => void) | undefined;
-  const movementGate = new Promise<void>((resolve) => { releaseMovement = resolve; });
-  const timers = new Set<ReturnType<typeof setTimeout>>();
-  let deliveryTime = 0;
-  let frameNumber = 0;
-  await left.routeWebSocket(/:2567\//, (socket) => {
-    const server = socket.connectToServer();
-    socket.onMessage((message) => {
-      if (!Buffer.isBuffer(message) || !message.includes("input")) {
-        server.send(message);
-        return;
-      }
-      void movementGate.then(() => {
-        if (left.isClosed()) return;
-        const now = Date.now();
-        deliveryTime = Math.max(deliveryTime + 1, now + 70 + (frameNumber++ % 3) * 15);
-        const timer = setTimeout(() => {
-          timers.delete(timer);
-          if (!left.isClosed()) server.send(message);
-        }, deliveryTime - now);
-        timers.add(timer);
-      });
-    });
-  });
   left.on("websocket", (socket) => socket.on("framesent", ({ payload }) => sent.push(payload)));
   try {
     await left.addInitScript(() => {
+      const send = WebSocket.prototype.send;
+      const held: (() => void)[] = [];
+      const decoder = new TextDecoder();
+      let deliveryTime = 0;
+      let frameNumber = 0;
+      window.addEventListener("release-test-movement", () => {
+        for (const deliver of held.splice(0)) deliver();
+      });
+      WebSocket.prototype.send = function (data: Parameters<WebSocket["send"]>[0]) {
+        const mode = document.documentElement.dataset.testMovementDelay;
+        const bytes = ArrayBuffer.isView(data) ? data : data instanceof ArrayBuffer ? new Uint8Array(data) : undefined;
+        if (!mode || !bytes || !decoder.decode(bytes).includes("input")) {
+          send.call(this, data);
+          return;
+        }
+        const deliver = () => {
+          const now = performance.now();
+          deliveryTime = Math.max(deliveryTime + 1, now + 70 + (frameNumber++ % 3) * 15);
+          setTimeout(() => {
+            if (this.readyState === WebSocket.OPEN) send.call(this, data);
+          }, deliveryTime - now);
+        };
+        if (mode === "hold") held.push(deliver);
+        else deliver();
+      };
+
       const schedule = window.requestAnimationFrame.bind(window);
       window.requestAnimationFrame = (callback) => schedule((time) => {
         if (document.documentElement.dataset.pauseFrames !== "true") callback(time);
@@ -69,6 +71,7 @@ test("two browsers share server positions and a departing player is removed", as
       }).observe(canvas, { attributes: true, attributeFilter: ["data-prediction-error"] });
     });
     const localZ = Number((await first.getAttribute("data-player-position"))!.split(",")[2]);
+    await left.evaluate(() => { document.documentElement.dataset.testMovementDelay = "hold"; });
     await left.keyboard.down("w");
     await expect.poll(async () => {
       const position = await first.getAttribute("data-player-position");
@@ -76,7 +79,10 @@ test("two browsers share server positions and a departing player is removed", as
     }).toBeGreaterThan(0.08);
     const [unmovedX, , unmovedZ] = await readRemotePosition();
     expect(Math.hypot(unmovedX - x, unmovedZ - z)).toBeLessThan(0.01);
-    releaseMovement?.();
+    await left.evaluate(() => {
+      document.documentElement.dataset.testMovementDelay = "jitter";
+      window.dispatchEvent(new Event("release-test-movement"));
+    });
     await expect(first).toHaveAttribute("data-prediction-error", /^\d+\.\d+$/);
     await expect.poll(async () => {
       const [nowX, , nowZ] = await readRemotePosition();
@@ -106,8 +112,6 @@ test("two browsers share server positions and a departing player is removed", as
     await expect(second).toHaveAttribute("data-remote-position", "");
   } finally {
     await Promise.all([left.close(), right.close()]);
-    releaseMovement?.();
-    for (const timer of timers) clearTimeout(timer);
   }
 });
 
