@@ -42,6 +42,7 @@ export interface MatchPlayer {
 export interface MatchSnapshot {
   tick: number;
   players: MatchPlayer[];
+  party?: PartyState;
 }
 
 export function parsePlayerInput(value: unknown): PlayerInput | undefined {
@@ -60,4 +61,26 @@ export const RESET_PAD = { x: 1.8, z: 3.65, halfWidth: 0.7, halfDepth: 0.42 };
 export function isOnResetPad(feet: { x: number; y: number; z: number }) {
   return feet.y < 0.08 && Math.abs(feet.x - RESET_PAD.x) < RESET_PAD.halfWidth &&
     Math.abs(feet.z - RESET_PAD.z) < RESET_PAD.halfDepth;
+}
+
+export const PARTY_TYPE = "party";
+export const PARTY_READY = "party-ready";
+export const PARTY_SETTINGS = "party-settings";
+export const PARTY_START = "party-start";
+export const PARTY_BOT = ":training-bot";
+export const PARTY_CODE = /^[A-F0-9]{10}$/;
+
+export interface PartySettings {
+  hostTeam: MatchPlayer["team"];
+  bot: boolean;
+  allowDuplicateAgents: boolean;
+}
+
+export interface PartyState {
+  code: string;
+  host: string;
+  ready: string[];
+  settings: PartySettings;
+  started: boolean;
+  expired: boolean;
 }

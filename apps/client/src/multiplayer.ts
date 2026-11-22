@@ -1,12 +1,16 @@
 import { Client } from "@colyseus/sdk";
-import { MATCH_FIRE, MATCH_INPUT, MATCH_RELOAD, MATCH_SHOT, MATCH_SNAPSHOT, MATCH_STOP, ROOM_TYPE } from "@pumpworks/shared";
-import type { MatchSnapshot, MoveInput, PlayerInput } from "@pumpworks/shared";
+import { MATCH_FIRE, MATCH_INPUT, MATCH_RELOAD, MATCH_SHOT, MATCH_SNAPSHOT, MATCH_STOP, PARTY_READY, PARTY_SETTINGS, PARTY_START, PARTY_TYPE, ROOM_TYPE } from "@pumpworks/shared";
+import type { MatchSnapshot, MoveInput, PartySettings, PlayerInput } from "@pumpworks/shared";
 
-export async function connectMatch(onSnapshot: (snapshot: MatchSnapshot, sessionId: string) => void, onLeave: () => void, onShot: () => void) {
+export type MatchMode = { kind: "quick" } | { kind: "create" } | { kind: "invite"; code: string };
+
+export async function connectMatch(mode: MatchMode, onSnapshot: (snapshot: MatchSnapshot, sessionId: string) => void, onLeave: () => void, onShot: () => void) {
   const endpoint = import.meta.env.VITE_PUMPWORKS_MATCH_URL ||
     `${window.location.protocol}//${window.location.hostname}:2567`;
   const client = new Client(endpoint);
-  const room = await client.joinOrCreate(ROOM_TYPE);
+  const room = mode.kind === "create" ? await client.create(PARTY_TYPE) :
+    mode.kind === "invite" ? await client.joinById(mode.code, { code: mode.code }) :
+    await client.joinOrCreate(ROOM_TYPE);
 
   let sequence = 0;
   let lastTick = -1;
@@ -36,6 +40,9 @@ export async function connectMatch(onSnapshot: (snapshot: MatchSnapshot, session
     stop() {
       room.send(MATCH_STOP, sequence++);
     },
+    ready(value: boolean) { room.send(PARTY_READY, value); },
+    configure(changes: Partial<PartySettings>) { room.send(PARTY_SETTINGS, changes); },
+    start() { room.send(PARTY_START); },
     async leave() { await room.leave(); },
   };
 }
