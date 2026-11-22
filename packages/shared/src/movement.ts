@@ -52,6 +52,15 @@ export interface MoveInput {
   jump: boolean;
 }
 
+export interface MovementState {
+  x: number;
+  y: number;
+  z: number;
+  crouched: boolean;
+  grounded: boolean;
+  verticalSpeed: number;
+}
+
 export class CharacterMovement {
   static findSpawn(world: RAPIER.World, preferred: RAPIER.Vector, occupants: Iterable<CharacterMovement>) {
     const standingShape = new RAPIER.Capsule(STANDING_HEIGHT / 2 - RADIUS, RADIUS);
@@ -101,6 +110,21 @@ export class CharacterMovement {
   get feet() {
     const p = this.collider.translation();
     return { x: p.x, y: p.y - this.height / 2, z: p.z };
+  }
+
+  get state(): MovementState {
+    return { ...this.feet, crouched: this.crouched, grounded: this.grounded, verticalSpeed: this.verticalSpeed };
+  }
+
+  restore(state: MovementState) {
+    const height = state.crouched ? CROUCH_HEIGHT : STANDING_HEIGHT;
+    if (height !== this.height) {
+      this.collider.setShape(new RAPIER.Capsule(height / 2 - RADIUS, RADIUS));
+      this.height = height;
+    }
+    this.collider.setTranslation({ x: state.x, y: state.y + height / 2, z: state.z });
+    this.grounded = state.grounded;
+    this.verticalSpeed = state.verticalSpeed;
   }
 
   get colliderHandle() {

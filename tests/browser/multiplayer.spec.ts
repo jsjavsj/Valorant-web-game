@@ -9,10 +9,43 @@ test("two browsers share server positions and a departing player is removed", as
   left.on("websocket", (socket) => socket.on("framesent", ({ payload }) => sent.push(payload)));
   try {
     await left.addInitScript(() => {
-      const schedule = window.requestAnimationFrame.bind(window);
-      window.requestAnimationFrame = (callback) => schedule((time) => {
-        if (document.documentElement.dataset.pauseFrames !== "true") callback(time);
+      const send = WebSocket.prototype.send;
+      const held: (() => void)[] = [];
+      const decoder = new TextDecoder();
+      let deliveryTime = 0;
+      let frameNumber = 0;
+      window.addEventListener("release-test-movement", () => {
+        for (const deliver of held.splice(0)) deliver();
       });
+      WebSocket.prototype.send = function (data: Parameters<WebSocket["send"]>[0]) {
+        const mode = document.documentElement.dataset.testMovementDelay;
+        const bytes = ArrayBuffer.isView(data) ? data : data instanceof ArrayBuffer ? new Uint8Array(data) : undefined;
+        if (!mode || !bytes || !decoder.decode(bytes).includes("input")) {
+          send.call(this, data);
+          return;
+        }
+        // The SDK reuses its encoding buffer after send returns.
+        const frame = new Uint8Array(bytes.byteLength);
+        frame.set(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+        const deliver = () => {
+          const now = performance.now();
+          deliveryTime = Math.max(deliveryTime + 1, now + 70 + (frameNumber++ % 3) * 15);
+          setTimeout(() => {
+            if (this.readyState === WebSocket.OPEN) send.call(this, frame);
+          }, deliveryTime - now);
+        };
+        if (mode === "hold") held.push(deliver);
+        else deliver();
+      };
+
+      const schedule = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (callback) => {
+        const runFrame = (time: number) => {
+          if (document.documentElement.dataset.pauseFrames === "true") schedule(runFrame);
+          else callback(time);
+        };
+        return schedule(runFrame);
+      };
     });
     await left.goto("/");
     await right.goto("/");
@@ -37,7 +70,27 @@ test("two browsers share server positions and a departing player is removed", as
     await left.mouse.down();
     await left.mouse.up();
     await expect.poll(() => left.evaluate(() => Boolean(document.pointerLockElement))).toBe(true);
+    await first.evaluate((canvas) => {
+      let maxCorrection = 0;
+      new MutationObserver(() => {
+        maxCorrection = Math.max(maxCorrection, Number(canvas.getAttribute("data-prediction-error")));
+        canvas.setAttribute("data-test-max-correction", String(maxCorrection));
+      }).observe(canvas, { attributes: true, attributeFilter: ["data-prediction-error"] });
+    });
+    const localZ = Number((await first.getAttribute("data-player-position"))!.split(",")[2]);
+    await left.evaluate(() => { document.documentElement.dataset.testMovementDelay = "hold"; });
     await left.keyboard.down("w");
+    await expect.poll(async () => {
+      const position = await first.getAttribute("data-player-position");
+      return localZ - Number(position?.split(",")[2]);
+    }).toBeGreaterThan(0.08);
+    const [unmovedX, , unmovedZ] = await readRemotePosition();
+    expect(Math.hypot(unmovedX - x, unmovedZ - z)).toBeLessThan(0.01);
+    await left.evaluate(() => {
+      document.documentElement.dataset.testMovementDelay = "jitter";
+      window.dispatchEvent(new Event("release-test-movement"));
+    });
+    await expect(first).toHaveAttribute("data-prediction-error", /^\d+\.\d+$/);
     await expect.poll(async () => {
       const [nowX, , nowZ] = await readRemotePosition();
       return Math.hypot(nowX - x, nowZ - z);
@@ -53,6 +106,13 @@ test("two browsers share server positions and a departing player is removed", as
     await left.keyboard.up("w");
     await left.evaluate(() => document.exitPointerLock());
     await expect.poll(() => left.evaluate(() => document.pointerLockElement === null)).toBe(true);
+    await left.evaluate(() => { delete document.documentElement.dataset.pauseFrames; });
+    await expect.poll(async () => {
+      const local = (await first.getAttribute("data-player-position"))?.split(",").map(Number) ?? [];
+      const remote = await readRemotePosition();
+      return Math.hypot(local[0] - remote[0], local[2] - remote[2]);
+    }).toBeLessThan(0.15);
+    console.log(`Prediction under 70–100 ms input jitter: max correction ${await first.getAttribute("data-test-max-correction")} m`);
 
     await left.getByRole("button", { name: "Leave match" }).click();
     await expect(right.getByText("1/2 players connected")).toBeVisible();
@@ -67,7 +127,7 @@ test("the server synchronizes a reset pad knockout and respawn", async () => {
   const { Client } = requireClient("@colyseus/sdk") as typeof import("../../apps/client/node_modules/@colyseus/sdk");
   const client = new Client("http://127.0.0.1:2567");
   const amber = await client.create("prototype");
-  type Snapshot = { players: { id: string; health: number; alive: boolean }[] };
+  type Snapshot = { players: { id: string; health: number; alive: boolean; lastAppliedInputSeq: number }[] };
   let observer: Snapshot | undefined;
   amber.onMessage("snapshot", (value: Snapshot) => { observer = value; });
   const teal = await client.joinById(amber.roomId);
@@ -78,7 +138,13 @@ test("the server synchronizes a reset pad knockout and respawn", async () => {
   let timer: ReturnType<typeof setInterval> | undefined;
   try {
     await expect.poll(() => read()?.health).toBe(100);
-    let seq = 0;
+    expect(self()?.lastAppliedInputSeq ?? -1).toBe(-1);
+    teal.send("input", { seq: 0, forward: 0, strafe: 0, yaw: 0, run: false, crouch: false, jump: false });
+    await expect.poll(() => self()?.lastAppliedInputSeq).toBe(0);
+    teal.send("stop", 1);
+    await expect.poll(() => self()?.lastAppliedInputSeq).toBe(1);
+
+    let seq = 2;
     timer = setInterval(() => {
       teal.send("input", { seq: seq++, forward: 1, strafe: 0, yaw: 0, run: false, crouch: false, jump: false });
     }, 30);
@@ -152,7 +218,7 @@ test("the server shares sidearm damage, enforces cadence, and reloads", async ()
 
     const start = left.find((p) => p.id === shooter.sessionId)!;
     const end = targetState()!;
-    shooter.send("fire", { yaw: Math.atan2(end.x - start.x, start.z - end.z), pitch: -0.16 });
+    shooter.send("fire", { yaw: Math.atan2(end.x - start.x, start.z - end.z), pitch: -0.16, viewTick: tick });
     await expect.poll(() => [ammo(left), ammo(right), health(left), health(right)])
       .toEqual([4, 4, 100, 100]);
   } finally {
@@ -181,4 +247,65 @@ test("rapid clicks produce feedback only for a confirmed shot", async ({ page })
   });
   await expect(page.getByText("Practice sidearm: 7 rounds")).toBeVisible();
   await expect(arena).toHaveAttribute("data-test-flashes", "1");
+});
+
+test("a delayed shot can hit the historical capsule, but stale and future ticks are rejected", async () => {
+  const requireClient = createRequire(new URL("../../apps/client/package.json", import.meta.url));
+  const { Client } = requireClient("@colyseus/sdk") as typeof import("../../apps/client/node_modules/@colyseus/sdk");
+  const client = new Client("http://127.0.0.1:2567");
+  const shooter = await client.create("prototype");
+  const target = await client.joinById(shooter.roomId);
+  type Snapshot = { tick: number; players: { id: string; x: number; z: number; health: number; ammo: number }[] };
+  let latest: Snapshot | undefined;
+  let anchor: Snapshot | undefined;
+  let shotSent = false;
+  const cadence: { tick: number; time: number }[] = [];
+  let profiling = false;
+  const player = (snapshot: Snapshot | undefined, id: string) => snapshot?.players.find((entry) => entry.id === id);
+  const ammo = () => player(latest, shooter.sessionId)?.ammo;
+  const health = () => player(latest, target.sessionId)?.health;
+  const fire = (viewTick: number) => shooter.send("fire", { yaw: Math.PI / 2, pitch: -0.12, viewTick });
+  shooter.onMessage("shot", () => {});
+  target.onMessage("snapshot", () => {});
+  shooter.onMessage("snapshot", (snapshot: Snapshot) => {
+    latest = snapshot;
+    if (profiling) cadence.push({ tick: snapshot.tick, time: performance.now() });
+    // 180 ms RTT plus one snapshot interval exceeds the former 12-tick window.
+    if (!anchor || shotSent || snapshot.tick - anchor.tick < 15) return;
+    const before = player(anchor, target.sessionId);
+    const after = player(snapshot, target.sessionId);
+    if (!before || !after || after.z - before.z <= 0.37) return;
+    shotSent = true;
+    fire(anchor.tick);
+  });
+  try {
+    await expect.poll(health).toBe(100);
+    anchor = latest;
+    target.send("input", { seq: 0, forward: -1, strafe: 0, yaw: 0, run: true, crouch: false, jump: false });
+    await expect.poll(health).toBe(75);
+    expect(ammo()).toBe(7);
+    target.send("stop", 1);
+    await expect.poll(() => latest!.tick).toBeGreaterThan(anchor!.tick + 24);
+
+    const rejectTick = latest!.tick;
+    fire(anchor!.tick + 1);
+    fire(rejectTick + 120);
+    await expect.poll(() => latest!.tick).toBeGreaterThan(rejectTick + 3);
+    expect(ammo()).toBe(7);
+    expect(health()).toBe(75);
+
+    fire(latest!.tick);
+    await expect.poll(ammo).toBe(6);
+    expect(health()).toBe(75);
+
+    profiling = true;
+    await expect.poll(() => cadence.length).toBeGreaterThanOrEqual(21);
+    const first = cadence[0];
+    const last = cadence.at(-1)!;
+    const seconds = (last.time - first.time) / 1000;
+    expect(last.tick - first.tick).toBe((cadence.length - 1) * 3);
+    console.log(`Observed over ${seconds.toFixed(2)} s: ${((last.tick - first.tick) / seconds).toFixed(1)} simulation Hz, ${((cadence.length - 1) / seconds).toFixed(1)} snapshot Hz`);
+  } finally {
+    await Promise.all([shooter.leave(), target.leave()]);
+  }
 });
